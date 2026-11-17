@@ -1,13 +1,101 @@
 ---
 name: ai-director
-description: Build a fully-automated multicam edit of a whole show from several independent camera/phone sources (fixed cameras, GoPros, phones), prioritizing whichever performer is most active or currently singing -- including non-band people who step up to an open mic, not just a fixed band roster. Stage 1 (built) assembles per-show camera metadata and a unified real-world timeline; later stages (design not yet implemented) add the actual director scoring/cut-selection and render the final show. Use this whenever the user wants an automated full-show multicam edit driven by movement/energy/performer signals, as opposed to `bootlegcam`'s per-song manual-curation workflow.
+description: Build a fully-automated multicam edit of a whole show from several independent camera/phone sources (fixed cameras, GoPros, phones) -- syncs every clip by audio, cleans each camera (lens/roll correction, phone stabilization, HDR->SDR), measures movement and dance-floor energy, directs shot by shot on the beat from the user's preferred video sources, mixes a soundtrack from the user's preferred audio sources, and renders through a fragment cache so later changes re-encode only the shots that changed. Works with or without a continuous camcorder master. Use this whenever the user wants an automated full-show multicam edit driven by movement/energy/performer signals, as opposed to `bootlegcam`'s per-song manual-curation workflow.
 ---
 
 # AI Director
 
-Status: **Stage 1 only (camera metadata + unified timeline).** Stages 2 (directing design) and 3
-(production) are design intent, not implemented yet -- see the project plan this was built from for
-the full picture; nothing in this skill should be assumed to render a finished video today.
+Status: **end to end.** Proven on two full shows: one with a continuous camcorder master (the
+original Nikon-anchor path, documented from "Stage 1" on below), and one with no master at all
+(GoPros + phones only -- the `show.json` path in the next two sections).
+
+## First: ask the user (never assume a camera combination)
+
+Every show has a different mix of cameras and the user has opinions about them. Before writing
+`show.json`, ask -- in plain words, one short list:
+
+1. **Which cameras** were rolling, and roughly where (fixed on a stand, handheld in the crowd, vertical?).
+2. **Preferred video sources**, in order ("the phone near the front is the best angle, the wide
+   fixed cams are backup"). This becomes `director.priority`. Cameras not listed fill in by score.
+3. **Preferred audio sources**, in order, and which camera fills the gaps. Often NOT the same as
+   the video preference (a phone near the PA can sound better than it looks). This becomes
+   `soundtrack.priority` / `soundtrack.bed` -- or `anchor.audio: "self"` if a camera recorded the
+   board feed.
+4. **Which camera covers every song** (one file per song) -- the anchor/clock.
+5. **Does any camera see the dance floor**, and should the crowd get shots when it gets going?
+6. **Variety**: how many shots in a row on the main camera before a look elsewhere?
+7. **Performer framing preferences**, if any (e.g. someone prefers fewer shots from behind).
+   Record it neutrally in `director.avoid_shots`; don't put reasons in files.
+8. **Final look**: SDR (default -- see "Color" below) and the song title banner (title only by default).
+
+Read the user's reasons as reasons: "use the phone more, the fixed cams are far and dark" asks for
+ONE change (the priority); it doesn't also ask to zoom or brighten the fixed cams.
+
+## Shows without a continuous master: the `show.json` pipeline
+
+`examples/show.example.json` documents every key. Order of steps (each script reads `show.json`
+from `$VIVECUT_SHOW_ROOT`):
+
+| Step | Script | Notes |
+|---|---|---|
+| Fixed cams: lens/roll | `lens_calibrator.py` -> `apply_lens_correction_gpu.py` | interactive per camera, see below |
+| Phones: shake | `detect_shakiness.py` -> `apply_stabilization.py` | **always, for every phone camera** -- not optional |
+| Sync | `sync_to_anchor.py` | writes `timeline.json`; only `verified` clips are used downstream |
+| Soundtrack | `build_soundtrack.py` | preferred audio first, bed fills gaps, levelled, crossfaded; per-camera stems kept |
+| Movement | `extract_people.py` per camera | keeps vertical video's shape |
+| Link | `link_signals.py` | timeline -> processed video + activity |
+| Floor | `floor_energy.py` | dancing per second on cameras that see the floor |
+| Direct | `build_highlights_edl.py` | the scene script, `highlights_edl.json` |
+| Render | `render_cached.py` | fragments on demand + cache, then stream-copy join + audio |
+
+Render ONE song first and have the user review it before the rest (`render_cached.py 01`); every
+later change is cheap because unchanged shots come from the cache.
+
+**Color.** Phones usually record HLG HDR (BT.2020, 10-bit); fixed cams SDR. Mixed unconverted, the
+phone shots look washed out next to the SDR shots. Make the final video SDR and convert the phones
+(`prep: "hlg_to_sdr"`: libplacebo on the GPU, Hable curve -- visually matched the CPU zscale chain
+at 2x the speed). Converting the SDR cameras UP to HLG was tried at four strengths and rejected:
+it can't add range the camera never captured, and every version looked flatter than the original.
+
+**Fragments on demand, not a standardization pass.** Converting every clip up front (HDR->SDR,
+fps, rotation) processes hours of footage nobody sees and adds an encode generation. Instead each
+shot's conversion + framing happens inside its fragment encode, keyed by source/in/out/chain/
+title/encoder (`render_cached.py`). Song 01 of the second show: 24 shots encoded in ~40 min the
+first time; re-assembled from cache in seconds. Keep the processed clips (`corrected/`,
+`stabilized/`) until the show is final -- they are the cache's sources.
+
+**The director is a priority ORDER, not a bonus.** Crowd moment > forced variety > preferred video
+sources > score. Activity has no fixed scale: 0.02-0.08 between cameras at one show, 1-2 at another
+where a fixed camera saw a whole moving crowd, so a "+0.6 preferred camera" bonus still lost 22 of
+~50 minutes of the preferred camera's shots. Check any hand-picked weight against the real spread of
+the signal it competes with.
+
+**Crowd moments.** `floor_energy.py` counts people dancing (shoulder bounce >= 0.03 of body height,
+walking removed) inside each fixed camera's floor rectangles. A 10 s mean of 1.5 people dancing was
+the 97th percentile at the second show and gave 13 crowd shots, all in the liveliest songs; 2.5 gave
+one. Pick the threshold from the show's own percentiles.
+
+### Lessons from the second show (no master, GoPros + phones)
+
+- **GCC-PHAT locked onto window edges** (lag = -(len(ref)-len(sig))): PHAT whitening turns a window's
+  hard start/stop and sub-80 Hz rumble into the strongest feature. `audio_sync_utils.prep()` (DC
+  removal, 80 Hz high-pass, Tukey taper) fixed it; use `gcc_phat_robust()` in new code.
+- **Two agreeing windows can agree on the same wrong chorus repeat** when a clip is short and its
+  windows overlap. For cameras with a trusted clock (phones with network time), reject an offset more
+  than 2 s from that camera's median clock error (10 of 89 clips; a frame check sided with the clock).
+- **A fixed camera's clock can be off by most of an hour** (54:39 here): two phones agreed within a
+  second across ~50 clips, which pinned it. Chaptered cameras are compared to the anchor per song.
+- **CuPy + an NVENC batch at the same time reset the GPU** ("invalid device"), killing the batch mid-clip
+  and leaving truncated files. Sync now forces the CPU FFT; audit output durations after any batch.
+- **Vertical phone video was squashed** to 1920x1080 for detection (~3x sideways), skewing detections
+  and the phones' activity scores. `extract_people.py` now keeps the displayed shape (1080x1920).
+- **Appearance matching (CLIP) confused two look-alike band members** (sunglasses, black tees) even with
+  every member as a reference. Movement identifies people far better: the seated person is the
+  drummer, a guitarist who never leaves the mic isn't the one walking around. Follow a performer's
+  skeleton track from a moment that's clearly them; re-picking "whoever stands in their spot" each
+  frame grabbed the wrong person as soon as they walked.
+- **"Face not visible" is not "turned away"**: tight phone close-ups crop the head out entirely and
+  read as a back view to a keypoint test. Require the head region in frame before calling a back view.
 
 This skill is deliberately a thin layer over several existing skills, not a reimplementation of their
 logic:
@@ -301,7 +389,7 @@ is restricted to real architectural lines:
   cropped detections (this skill's build: three independent measurements landing within 3.0-4.1°
   of each other) is real confidence; a single run's number alone isn't.
 
-### Optional: per-camera handheld-shake detection + stabilization (phone footage)
+### Required for every phone camera: handheld-shake detection + stabilization
 
 `bootlegcam`'s own `build_song.py` already reads an optional `shakiness-report.csv`
 (`steadiness_score()`/`load_shakiness_map()`) if one happens to exist beside a Masters folder, but
@@ -393,11 +481,11 @@ Windows path handed to an ffmpeg filter OPTION, where `:` is a key=value separat
   artifact the Read tool prints for display. A parser written against what Read shows (expecting
   `"<n>\t<label>,<time>"`) will match nothing against the real file's `"<label>,<time>"` lines.
 
-## Stages 2-3 — partial: a first real director, built for Give 2026
+## Stages 2-3 — the director, as first built for the master-camera show
 
-A working per-show director now exists
-(`<project folder>\scripts\build_highlights_edl.py` -- still per-show, not yet moved into this skill
-and generalized across venues, since it's had exactly one real show to prove itself against so far).
+The director lives in `scripts\build_highlights_edl.py`. This section describes how it was first
+built for the show with a continuous master; with a `show.json` it also takes the anchor, the user's
+preferred video sources, crowd moments and framing preferences from config (see the top sections).
 It keeps every song in FULL (dead air trimmed only -- NOT a compressed ~30min highlights reel; that
 was the original design, dropped per direct request: "we are no longer targeting a full video of 30
 minutes, but the full show, without long pauses") and cuts between cameras throughout, as a
@@ -461,9 +549,9 @@ picture cuts between cameras freely, but the soundtrack stays one continuous rec
 the way a real multicam mix works; switching audio sources mid-song is a tell that gives away a sloppy
 edit.
 
-Not generalized yet: this script hardcodes this show's `CORRECTED_DIRS` camera-name-to-folder mapping
-and its specific camera roster. Worth lifting into this skill's own `scripts\` once it's been proven
-against a second show. Also still outstanding from the original plan: real crowd-member-becomes-
+Generalized after the second show: without a `show.json` the script keeps this first show's roster
+and `CORRECTED_DIRS`; with one, the roster comes from config (proven by reproducing the second show's
+scene script shot-for-shot). Still outstanding from the original plan: real crowd-member-becomes-
 performer attribution (still an unsolved re-ID problem, not attempted here -- this director scores
 existing per-camera activity/audio signal, it doesn't try to track a specific person across cameras or
 across an occlusion gap) and the privacy/face-anonymization idea for non-performer attendees.
@@ -503,8 +591,9 @@ actually renders for that segment really is X seconds long, don't just trust the
 
 ## Per-song rendering (`render_song.py`): 4K canvas, per-source treatments, provenance
 
-A second script, `render_song.py` (currently per-show like the EDL builder, not yet lifted into this
-skill), turns one song's EDL entry into a finished video:
+`render_song.py` (the first show's renderer; for new shows prefer `render_cached.py`, which applies
+the same treatments per camera from `show.json`, converts phone HDR to SDR inside each fragment, and
+caches every shot) turns one song's EDL entry into a finished video:
 
 - **True 4K throughout** (3840x2160) -- every camera at Give 2026 shoots native 4K, so nothing needs
   upscaling. Three per-source treatments, chosen by `treatment_for(seg)`:

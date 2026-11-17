@@ -1,0 +1,67 @@
+{
+  "_comment": "One show's roster. ASK the user for every choice marked (ask) -- never assume a camera combination. Paths are absolute or relative to the show folder ($VIVECUT_SHOW_ROOT).",
+
+  "anchor": {
+    "camera": "cam_a",
+    "_camera": "(ask) a camera with ONE FILE PER SONG covering every song; its timeline is the shared clock",
+    "dir": "D:/shows/2026-11-13 Venue/CamA",
+    "clock_fix_s": 0.0,
+    "_clock_fix_s": "seconds to ADD to its creation_time to get real UTC (compare against a phone with network time)",
+    "audio": "soundtrack",
+    "_audio": "'soundtrack' = mixed by build_soundtrack.py from the user's preferred audio sources; 'self' = the anchor's own audio (e.g. a camcorder on the board feed)"
+  },
+
+  "cameras": {
+    "cam_a": {
+      "orientation": "landscape", "treatment": "inset2k", "prep": "sdr",
+      "video_dir": "corrected/CamA", "people_dir": "people/CamA"
+    },
+    "cam_b": {
+      "orientation": "landscape", "treatment": "inset2k", "prep": "sdr", "per_song_files": true,
+      "audio_dir": "D:/shows/2026-11-13 Venue/CamB",
+      "video_dir": "corrected/CamB", "people_dir": "people/CamB"
+    },
+    "phone_a": {
+      "orientation": "portrait", "treatment": "portrait", "prep": "hlg_to_sdr",
+      "audio_dir": "D:/shows/2026-11-13 Venue/PhoneA",
+      "clock": {"csv": "phone_a_capture_times.csv", "file_col": "file", "utc_col": "capture_utc"},
+      "video_dir": "stabilized/PhoneA", "people_dir": "people/PhoneA"
+    },
+    "phone_b": {
+      "orientation": "landscape", "treatment": "fill", "prep": "hlg_to_sdr",
+      "audio_dir": "D:/shows/2026-11-13 Venue/PhoneB",
+      "video_dir": "stabilized/PhoneB", "people_dir": "people/PhoneB"
+    }
+  },
+
+  "director": {
+    "priority": ["phone_a", "phone_b"],
+    "_priority": "(ask) preferred VIDEO sources, in order; cameras not listed fill in by score",
+    "dwell": {"phone_a": 5, "phone_b": 3},
+    "_dwell": "(ask) shots in a row before a forced look at another camera, for variety (default 2)",
+    "anchor_bonus": 0.0,
+    "crowd": {"camera": "cam_b", "min_dancing": 1.5},
+    "_crowd": "(ask) which camera sees the dance floor, if any; null to never cut to the crowd. min_dancing = 10 s mean of people dancing; pick ~ the 97th percentile of floor_energy.py's output so only real peaks count",
+    "avoid_shots": null,
+    "_avoid_shots": "(ask) performer framing preference, e.g. fewer shots from behind: JSON {clip_basename: [[start_s, end_s], ...]}"
+  },
+
+  "soundtrack": {
+    "priority": ["phone_a", "phone_b"],
+    "_priority": "(ask) preferred AUDIO sources, in order -- often NOT the same as the video preference",
+    "bed": "cam_b",
+    "_bed": "(ask) the camera that fills every gap (recorded every song)"
+  },
+
+  "floor": {
+    "cam_b": [{"x_max": 0.40}],
+    "_cam_b": "dance-floor rectangles in frame fractions, read off a whole-show heatmap of people's feet"
+  },
+
+  "render": {
+    "out_dir": "Preview/highlights",
+    "cache_dir": "cache/frag",
+    "title_hold_s": 4.0,
+    "version": "1"
+  }
+}

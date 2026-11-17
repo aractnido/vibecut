@@ -50,3 +50,21 @@ def gcc_phat(sig, ref):
     if _GPU:
         peak, std = float(peak), float(std)
     return (k - len(ref) + 1) / SR, float(peak / (std + 1e-12))
+
+
+def prep(x, sr=SR, highpass_hz=80.0, taper=0.1):
+    """Condition a window before gcc_phat: remove DC, high-pass, Tukey-taper the edges.
+
+    Raw GoPro/phone windows made GCC-PHAT peak at the window EDGES (lag = -(len(ref) - len(sig)), i.e. one signal
+    aligned to the end of the other) instead of at the real content match: PHAT whitening turns each window's hard
+    start/stop and the rumble below ~80 Hz into the strongest "feature". Found at a second show; with this, three
+    independent windows of the same clip agreed within a sample (z 108-141) where raw windows disagreed by +-6 s."""
+    from scipy.signal import butter, sosfilt, windows
+    sos = butter(4, highpass_hz, "hp", fs=sr, output="sos")
+    y = sosfilt(sos, x - np.mean(x))
+    return (y * windows.tukey(len(y), taper)).astype(np.float32)
+
+
+def gcc_phat_robust(sig, ref):
+    """gcc_phat on prep()-conditioned windows -- prefer this for any new sync code."""
+    return gcc_phat(prep(sig), prep(ref))

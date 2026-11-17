@@ -1,46 +1,81 @@
-r"""build_highlights_edl.py -- pick an edit decision list (EDL) out of the full Give 2026 show's
-unified timeline.json: the FULL show, every song kept in full, with dead air trimmed out (not a
-compressed ~30min highlights reel -- that was the original design, dropped per direct request:
-"we are no longer targeting a full video of 30 minutes, but the full show, without long pauses").
+r"""build_highlights_edl.py -- the director: write the scene script (highlights_edl.json) for a whole show from
+timeline.json -- every song kept in FULL with dead air trimmed, cut between cameras shot by shot.
 
-Three nested decisions, driven by signals already extracted in Stage 1 plus two real-editing
-conventions confirmed by research (see SKILL.md / session notes -- cuts should follow the song's
-own tempo/phrasing, not a fixed clock; a camera shouldn't park on one shot too long):
+Two modes:
+  * show.json present (show_config.py): the roster, anchor camera, the user's preferred VIDEO sources and the
+    crowd/framing rules come from it -- ask the user for those, never assume a camera combination.
+  * no show.json: the original single-show behaviour (a continuous "nikon" master as anchor and audio).
 
-  1. WHICH WINDOW of each song to keep. The window OPENS at the song's own real first note
-     (find_song_onset() -- fine-grained RMS-rise detection on the actual audio, not the coarse
-     1-second AudioEnergy trace) and CLOSES wherever sustained quiet begins afterward
-     (find_song_end() -- the same RMS-envelope technique, scanning for a sustained drop instead
-     of a sustained rise): applause fading, between-song banter, tuning. This keeps the real song
-     and trims the dead time around it, without compressing the song itself down to a shorter
-     "highlight."
-  2. WHERE the cuts land, moment to moment, inside that window. Tempo-aware: this song's own
-     BPM (librosa beat-tracking on its actual highlight-window audio, same technique used for
-     the single-song beatsync demo earlier in this project) sets a baseline shot length scaled
-     from a 120bpm reference, and every candidate cut point snaps to the NEAREST REAL BEAT near
-     that nominal length rather than a mechanical fixed-15s clock -- a fast song gets shorter,
-     more frequent cuts; a slow one holds longer, same as a human editor would pace it.
-  3. WHICH CAMERA to show for that segment. Scored by its own mean person/pose activity
-     (extract_people.py) with a zoom/glow quality multiplier and a blackout disqualification.
-     Nikon (the only camera guaranteed to cover every chunk) gets a flat bonus so it stays the
-     safe default; a stickiness bonus discourages flapping, and a forced-variety rule prevents
-     any one non-Nikon camera from holding the shot indefinitely (max dwell scales with tempo
-     too, via the chunk length). An ANTICIPATION bonus looks a few seconds PAST the segment
-     being scored: if that camera's own activity is about to rise sharply (someone starting to
-     walk toward a mic, about to become active), the score is boosted now, so the director is
-     already on that camera a few seconds before the action peaks, not reacting after the fact.
+Three nested decisions per song:
+  1. WHICH WINDOW to keep: from the song's real first note (find_song_onset(): RMS-rise on the actual audio, not a
+     coarse 1 s energy trace) to where sustained quiet begins (find_song_end()).
+  2. WHERE cuts land: the song's own BPM (librosa) scales a 120 bpm reference shot length, and every cut snaps to
+     the nearest real beat -- fast songs cut faster, slow ones hold longer.
+  3. WHICH CAMERA, per segment, in this order:
+     a. crowd moment: the configured crowd camera, when its floor (floor_energy.py) has >= crowd.min_dancing
+        people dancing on average over the segment -- one shot, never two in a row, then back to the band;
+     b. variety: after director.dwell[cam] (default 2) shots in a row on one camera, the best OTHER camera;
+     c. the user's preferred video sources (director.priority, in order) whenever one fully covers the segment;
+     d. everything else by score: person/pose activity (extract_people.py) x zoom/glow quality, plus small
+        tie-breakers -- anchor (covers every song), sticky (avoid flicker), novelty (first look at a camera this
+        song), anticipation (that camera's activity is about to rise, so be there before the action).
+     A priority ORDER, not an additive bonus, on purpose: activity is not on a fixed scale (0.02-0.08 between
+     cameras at one show, 1-2 at another where a fixed camera saw a whole moving crowd), so a "+0.6 preferred
+     camera" bonus still lost 22 minutes of the preferred camera's shots to higher-activity angles.
+  Performer framing preference (optional): some performers prefer fewer shots from behind. director.avoid_shots
+  points to {clip_basename: [[start_s, end_s], ...]} (clip-local intervals to keep off screen). The director then
+  ends that camera's shot on the last beat BEFORE the interval and returns on the first beat AFTER it -- one
+  well-timed cut away and one back, never camera ping-pong around it.
 
-GoPro1/GoPro2 candidates prefer the lens/roll-corrected clips (MastersGoPro{1,2}-Corrected,
-see apply_lens_correction.py) over the raw fisheye-distorted Masters copies, falling back to
-raw if a corrected version isn't available yet for that specific clip.
-
-Nikon's own continuous audio is always the output audio for a song's highlight window,
-regardless of which camera's video is showing -- it's the clean FOH-mic master, every other
-camera's audio is scratch-reference quality only, and audio never switches when the camera does.
-
-Output: a single JSON EDL (highlights_edl.json), no rendering here -- inspect/adjust the EDL
-before spending GPU/ffmpeg time on it.
+Every candidate must FULLY cover its segment's real-time window (partial coverage used to be clamped silently and
+desynced the rest of the song), and an assertion checks each segment's clip span equals its real-time span.
+Output: highlights_edl.json (no rendering here -- inspect before spending GPU time).
 """
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timedelta
+
+import librosa
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import show_config  # noqa: E402
+
+MC = show_config.ROOT
+CFG = show_config.load(required=False)
+if CFG:
+    ANCHOR = CFG["anchor"]["camera"]
+    ANCHOR_AUDIO = CFG["anchor"].get("audio", "self")   # "soundtrack" = soundtrack/NN.wav (build_soundtrack.py)
+    OTHER_CAMS = tuple(c for c in CFG["cameras"] if c != ANCHOR)
+    ORIENTATION = {c: v.get("orientation", "landscape") for c, v in CFG["cameras"].items()}
+    ORIENTATION.setdefault(ANCHOR, "landscape")
+    PRIORITY = tuple(CFG["director"].get("priority") or ())
+    DWELL_BY_CAM = dict(CFG["director"].get("dwell") or {})
+    CAMERA_BONUS = dict(CFG["director"].get("camera_bonus") or {})
+    _crowd = CFG["director"].get("crowd") or {}
+    CROWD_CAM = _crowd.get("camera")
+    CROWD_MIN = float(_crowd.get("min_dancing", 1.5))
+    AVOID_FILE = show_config.path(CFG["director"].get("avoid_shots"))
+    CORRECTED_DIRS = {}   # timeline.json (link_signals.py) already points at processed video
+else:
+    ANCHOR, ANCHOR_AUDIO = "nikon", "self"
+    OTHER_CAMS = ("iris", "nova", "gopro1", "gopro2")
+    ORIENTATION = {"nikon": "landscape", "gopro1": "landscape", "gopro2": "landscape",
+                   "iris": "portrait", "nova": "portrait"}
+    PRIORITY, DWELL_BY_CAM, CAMERA_BONUS = (), {}, {}
+    CROWD_CAM, CROWD_MIN, AVOID_FILE = None, 1.5, None
+    CORRECTED_DIRS = {
+        "gopro1": os.path.join(MC, "MastersGoPro1-Corrected"),
+        "gopro2": os.path.join(MC, "MastersGoPro2-Corrected"),
+        "iris": os.path.join(MC, "MastersIris-Stabilized"),
+        "nova": os.path.join(MC, "MastersNova-Stabilized"),
+    }
+SOUNDTRACK = os.path.join(MC, "soundtrack")
+CROWD_BONUS = 1.0
+BACK_MIN_SHOT = 2.0   # a shot cut short before an avoided interval still lasts at least this long
 import json
 import tempfile
 import os
@@ -50,7 +85,10 @@ from datetime import datetime, timedelta
 import librosa
 import numpy as np
 
-MC = os.environ.get("VIVECUT_SHOW_ROOT", r"C:\path\to\your\show-working-folder")
+# Preview only: before extract_people has run, give every camera the same flat activity so the
+# director can still cut (novelty/stickiness/dwell rules then drive the rotation).
+PREVIEW_ACTIVITY = float(os.environ["PREVIEW_ACTIVITY"]) if os.environ.get("PREVIEW_ACTIVITY") else None
+ONLY_SONGS = set(os.environ.get("ONLY_SONGS", "").split(",")) - {""}
 TIMELINE = os.path.join(MC, "timeline.json")
 OUT = os.path.join(MC, "highlights_edl.json")
 SCRATCH = os.path.join(tempfile.gettempdir(), "vivecut_beats")
@@ -65,30 +103,20 @@ MIN_SEG, MAX_SEG = 6.0, 18.0
 # camera actually had the more active/interesting shot -- confirmed on song 01: GoPro1 had HIGHER
 # raw activity than Nikon on segment 30.4-43.0 (0.121 vs 0.098) and still lost. These are now small
 # tie-breakers, not auto-wins, so the actual per-segment signal drives the cut.
-NIKON_BONUS = 0.05
+NIKON_BONUS = CFG["director"]["anchor_bonus"] if CFG else 0.05   # anchor-camera tie-breaker
 STICKY_BONUS = 0.04
 MAX_DWELL_CHUNKS = 2    # before forcing a look elsewhere (chunk length itself is tempo-scaled)
 ANTICIPATE_SEC = 5.0    # how far ahead to look for a coming rise in activity
 ANTICIPATE_RISE_RATIO = 1.4   # future mean must exceed current mean by this multiple
 ANTICIPATE_BONUS = 0.20
 # First-appearance bonus for a camera not yet used in this song -- without this, a slightly
-# lower-scoring but still decent angle (Iris/Nova passing by with a phone, GoPro's wide
-# coverage) never gets shown at all once Nikon is winning narrowly; real multicam editing samples
+# lower-scoring but still decent angle (a phone passing by, a wide fixed camera) never gets
+# shown at all once the anchor is winning narrowly; real multicam editing samples
 # every available angle at least once rather than parking on whichever camera scores highest in a
 # vacuum. One-time per camera per song, not a recurring bonus -- it's there to GET a camera its
 # first look, not to keep it on screen after that.
 NOVELTY_BONUS = 0.12
 
-ORIENTATION = {
-    "nikon": "landscape", "gopro1": "landscape", "gopro2": "landscape",
-    "iris": "portrait", "nova": "portrait",
-}
-CORRECTED_DIRS = {
-    "gopro1": os.path.join(MC, "MastersGoPro1-Corrected"),
-    "gopro2": os.path.join(MC, "MastersGoPro2-Corrected"),
-    "iris": os.path.join(MC, "MastersIris-Stabilized"),
-    "nova": os.path.join(MC, "MastersNova-Stabilized"),
-}
 
 
 def parse(s):
@@ -164,7 +192,7 @@ LEAD_IN_SEC = 0.1         # tiny pad so the very first attack transient isn't cl
 # CAROLINE" title-card screen entirely -- the card is already showing at local 0 of the per-song
 # split and the user explicitly wants it visible in the final cut, so this starts at the true
 # beginning of the split instead of at the detected musical onset.
-ONSET_OVERRIDE_SEC = {"09": 0.0}
+ONSET_OVERRIDE_SEC = {}
 
 
 def find_song_onset(nikon_file):
@@ -253,16 +281,43 @@ def nearest_beat(beats, target, lo_bound):
 
 def main():
     tl = json.load(open(TIMELINE, encoding="utf-8"))
-    nikon_clips = sorted(tl["cameras"]["nikon"], key=lambda c: c["real_start_utc"])
+    def a_start(c):
+        return c.get("real_start_utc") or c["start"]
 
-    orig_durs = [(parse(c["real_end_utc"]) - parse(c["real_start_utc"])).total_seconds() for c in nikon_clips]
+    def a_end(c):
+        return c.get("real_end_utc") or c["end"]
 
-    other_clips = {src: tl["cameras"][src] for src in ("iris", "nova", "gopro1", "gopro2")}
+    nikon_clips = sorted(tl["cameras"][ANCHOR], key=a_start)
+    for c in nikon_clips:
+        c["video"] = c["file"]
+        # audio for onset/end/beat analysis AND the render: the mixed soundtrack, or the anchor's own audio
+        c["file"] = (os.path.join(SOUNDTRACK, f"{c['song_num']}.wav") if ANCHOR_AUDIO == "soundtrack"
+                     else c.get("audio_file", c["file"]))
+
+    orig_durs = [(parse(a_end(c)) - parse(a_start(c))).total_seconds() for c in nikon_clips]
+
+    # Only clips whose offset was verified (sync_to_anchor.py); older timelines have no flag.
+    other_clips = {src: [c for c in tl["cameras"].get(src, []) if c.get("verified", True)] for src in OTHER_CAMS}
+
+    # Performer framing preference: clip-local intervals to keep off screen, in real time, per clip file.
+    back_by_clip = {}
+    avoid = load_json(AVOID_FILE) or {}
+    for src, clips in other_clips.items():
+        for c in clips:
+            c_start = parse(c["start"])
+            for a, b in avoid.get(os.path.basename(c["file"]), []):
+                back_by_clip.setdefault(c["file"], []).append(
+                    (c_start + timedelta(seconds=a), c_start + timedelta(seconds=b)))
+    all_back = sorted(iv for ivs in back_by_clip.values() for iv in ivs)
+    if AVOID_FILE:
+        print(f"intervals to keep off screen: {len(all_back)}")
 
     songs_out = []
     for nc, orig_dur in zip(nikon_clips, orig_durs):
         song_num, title = nc["song_num"], nc["title"]
-        nikon_start = parse(nc["real_start_utc"])
+        if ONLY_SONGS and song_num not in ONLY_SONGS:
+            continue
+        nikon_start = parse(a_start(nc))
 
         onset = ONSET_OVERRIDE_SEC[song_num] if song_num in ONSET_OVERRIDE_SEC else find_song_onset(nc["file"])
         hl_start_local = onset + LEAD_IN_SEC
@@ -278,9 +333,14 @@ def main():
 
         nikon_act = load_json(nc.get("activity"))
         nikon_mean = nikon_act["mean"] if nikon_act else None
+        if nikon_mean is None and PREVIEW_ACTIVITY is not None:
+            nikon_mean = [PREVIEW_ACTIVITY] * (int(orig_dur) + 2)
+
+        song_back = [((a - nikon_start).total_seconds(), (b - nikon_start).total_seconds()) for a, b in all_back]
 
         segments = []
         prev_cam = None
+        prev_crowd = False
         dwell = 0
         seen_cams = set()
         t = hl_start_local
@@ -289,6 +349,17 @@ def main():
             seg_hi = nearest_beat(beats, nominal_hi, t)
             if seg_hi is None or seg_hi >= hl_end_local:
                 seg_hi = hl_end_local
+            # Time cuts around intervals to keep off screen: end the shot on the last beat before one starts,
+            # and during one, end the shot on the first beat after it ends -- so the edit leaves that angle once
+            # and comes back once, instead of dodging back and forth.
+            for bs, be in song_back:
+                if t + BACK_MIN_SHOT < bs < seg_hi:
+                    before = [b for b in beats if t + BACK_MIN_SHOT <= b <= bs]
+                    seg_hi = before[-1] if before else bs
+                elif bs <= t < be < seg_hi:
+                    after = [b for b in beats if be <= b < seg_hi]
+                    if after and after[0] >= t + BACK_MIN_SHOT:
+                        seg_hi = after[0]
             seg_lo = t
             abs_lo = nikon_start + timedelta(seconds=seg_lo)
             abs_hi = nikon_start + timedelta(seconds=seg_hi)
@@ -300,8 +371,8 @@ def main():
                 if m is not None:
                     future = mean_over(nikon_mean, seg_hi, seg_hi + ANTICIPATE_SEC)
                     bonus = ANTICIPATE_BONUS if (future and m > 0 and future > m * ANTICIPATE_RISE_RATIO) else 0.0
-                    candidates.append({"score": m + NIKON_BONUS + bonus, "source": "nikon",
-                                        "file": nc["file"], "lo": seg_lo, "hi": seg_hi,
+                    candidates.append({"score": m + NIKON_BONUS + bonus, "source": ANCHOR,
+                                        "file": nc["video"], "lo": seg_lo, "hi": seg_hi,
                                         "activity": m, "quality": 1.0, "nikon_bonus": NIKON_BONUS,
                                         "anticipate_bonus": bonus})
 
@@ -320,12 +391,16 @@ def main():
                     # t=0, but the segment still claimed to start at the nominal (2.5s-earlier)
                     # real time, so the video ran 2.5s ahead of the audio from that point on.
                     if c_start <= abs_lo and c_end >= abs_hi:
+                        if any(a < abs_hi and b > abs_lo for a, b in back_by_clip.get(c["file"], [])):
+                            continue  # this shot would show an interval the performer prefers off screen
                         loc_lo = (abs_lo - c_start).total_seconds()
                         loc_hi = (abs_hi - c_start).total_seconds()
                         bo = load_json(c.get("blackout"))
                         if overlaps_blackout(bo, loc_lo, loc_hi):
                             continue
                         act = load_json(c.get("activity"))
+                        if (not act or not act.get("mean")) and PREVIEW_ACTIVITY is not None:
+                            act = {"mean": [PREVIEW_ACTIVITY] * (int((c_end - c_start).total_seconds()) + 2)}
                         if not act or not act.get("mean"):
                             continue
                         m = mean_over(act["mean"], loc_lo, loc_hi)
@@ -336,9 +411,18 @@ def main():
                         zg = load_json(c.get("zoomglow"))
                         q = zoomglow_quality(zg, loc_lo, loc_hi)
                         full_path = resolve_clip_path(src, c["file"])
+                        if not os.path.exists(full_path):  # correction not rendered yet: raw file
+                            full_path = c["audio_file"]
+                        crowd = 0.0
+                        if src == CROWD_CAM:
+                            floor = load_json(os.path.join(MC, "floor", src, os.path.splitext(os.path.basename(c["file"]))[0] + ".json"))
+                            if floor:
+                                crowd = mean_over(floor["n_dancing"], loc_lo, loc_hi) or 0.0
+                        crowd_bonus = CROWD_BONUS if (crowd >= CROWD_MIN and not prev_crowd) else 0.0
                         candidates.append({"score": m * q + bonus, "source": src, "file": full_path,
                                             "lo": loc_lo, "hi": loc_hi, "activity": m, "quality": q,
-                                            "nikon_bonus": 0.0, "anticipate_bonus": bonus})
+                                            "nikon_bonus": 0.0, "anticipate_bonus": bonus,
+                                            "crowd": crowd, "crowd_bonus": crowd_bonus})
 
             if not candidates:
                 t = seg_hi
@@ -347,13 +431,22 @@ def main():
             for cand in candidates:
                 cand["sticky_bonus"] = STICKY_BONUS if cand["source"] == prev_cam else 0.0
                 cand["novelty_bonus"] = NOVELTY_BONUS if cand["source"] not in seen_cams else 0.0
-                cand["total"] = cand["score"] + cand["sticky_bonus"] + cand["novelty_bonus"]
+                cand["camera_bonus"] = CAMERA_BONUS.get(cand["source"], 0.0)
+                cand.setdefault("crowd_bonus", 0.0)
+                cand["total"] = (cand["score"] + cand["sticky_bonus"] + cand["novelty_bonus"] + cand["camera_bonus"]
+                                 + cand["crowd_bonus"])
             candidates.sort(key=lambda c: -c["total"])
 
-            if prev_cam != "nikon" and dwell >= MAX_DWELL_CHUNKS:
-                alt = [c for c in candidates if c["source"] != prev_cam]
+            crowd_pick = [c for c in candidates if c["crowd_bonus"]]
+            if crowd_pick:                                        # crowd got going: show them, one shot
+                candidates = crowd_pick + [c for c in candidates if not c["crowd_bonus"]]
+            elif (CFG or prev_cam != ANCHOR) and dwell >= DWELL_BY_CAM.get(prev_cam, MAX_DWELL_CHUNKS):
+                alt = [c for c in candidates if c["source"] != prev_cam]   # variety: best other camera
                 if alt:
                     candidates = alt
+            else:
+                rank = {src: i for i, src in enumerate(PRIORITY)}  # the user's preferred video sources first
+                candidates.sort(key=lambda c: (rank.get(c["source"], len(PRIORITY)), -c["total"]))
 
             winner = candidates[0]
             runner_up = candidates[1] if len(candidates) > 1 else None
@@ -368,13 +461,17 @@ def main():
             if winner["quality"] != 1.0:
                 reason_bits.append(f"zoom/glow quality x{winner['quality']:.2f}")
             if winner["nikon_bonus"]:
-                reason_bits.append(f"carries show audio (+{winner['nikon_bonus']:.2f})")
+                reason_bits.append(f"anchor camera, covers the whole song (+{winner['nikon_bonus']:.2f})")
             if winner["anticipate_bonus"]:
                 reason_bits.append(f"anticipation -- activity about to rise (+{winner['anticipate_bonus']:.2f})")
             if winner["sticky_bonus"]:
                 reason_bits.append(f"stayed on this camera, avoiding flicker (+{winner['sticky_bonus']:.2f})")
+            if winner["camera_bonus"]:
+                reason_bits.append(f"preferred camera (+{winner['camera_bonus']:.2f})")
             if winner["novelty_bonus"]:
                 reason_bits.append(f"first look at this camera this song (+{winner['novelty_bonus']:.2f})")
+            if winner["crowd_bonus"]:
+                reason_bits.append(f"crowd moment, {winner['crowd']:.1f} people dancing (+{winner['crowd_bonus']:.2f})")
             reason = f"{winner['source']}: " + ", ".join(reason_bits) + f" = {winner['total']:.3f} total"
             if runner_up:
                 reason += (f"; beat {runner_up['source']} ({runner_up['total']:.3f}) by "
@@ -402,6 +499,7 @@ def main():
                 "reason": reason,
             })
             dwell = dwell + 1 if src == prev_cam else 1
+            prev_crowd = bool(winner["crowd_bonus"])
             prev_cam = src
             seen_cams.add(src)
             t = seg_hi

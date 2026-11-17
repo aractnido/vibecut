@@ -51,19 +51,36 @@ from clip_utils import find_clips
 W, H = 1920, 1080
 CONF_KP = 0.4
 
-def decode_frames(video_path, fps):
-    """Yield successive BGR frames at `fps`, scaled to 1080p, via NVDEC (same pattern as
-    stage-movement-analysis's extract_pose.py)."""
+def frame_size(video_path):
+    """Analysis size that keeps the clip's DISPLAYED shape: 1920x1080 landscape, 1080x1920 portrait.
+    Every clip used to be scaled to 1920x1080, squashing vertical phone video ~3x sideways, which skews both the
+    detections and the activity numbers the director scores phones by (found at a second show). box/kp are in
+    this space; the npz records it as frame_w/frame_h."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                        "stream=width,height:stream_side_data=rotation", "-of", "json", video_path],
+                       capture_output=True, text=True)
+    st = json.loads(r.stdout)["streams"][0]
+    w, h = st["width"], st["height"]
+    rot = next((abs(int(sd.get("rotation", 0))) for sd in st.get("side_data_list", []) if "rotation" in sd), 0)
+    if rot in (90, 270):
+        w, h = h, w
+    return (W, H) if w >= h else (H, W)
+
+
+def decode_frames(video_path, fps, size=(W, H)):
+    """Yield successive BGR frames at `fps`, scaled to `size` (keeps the displayed shape), via NVDEC (same
+    pattern as stage-movement-analysis's extract_pose.py)."""
+    fw, fh = size
     dec = subprocess.Popen(
         ["ffmpeg", "-hide_banner", "-v", "error", "-hwaccel", "cuda", "-i", video_path,
-         "-vf", f"fps={fps},scale={W}:{H}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
-        stdout=subprocess.PIPE, bufsize=W * H * 3 * 4)
-    fsz = W * H * 3
+         "-vf", f"fps={fps},scale={fw}:{fh}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
+        stdout=subprocess.PIPE, bufsize=fw * fh * 3 * 4)
+    fsz = fw * fh * 3
     while True:
         buf = dec.stdout.read(fsz)
         if len(buf) < fsz:
             break
-        yield np.frombuffer(buf, np.uint8).reshape(H, W, 3).copy()
+        yield np.frombuffer(buf, np.uint8).reshape(fh, fw, 3).copy()
     dec.wait()
 
 
@@ -131,7 +148,7 @@ def track_clip(video_path, model, fps, imgsz, conf, max_gap_frames, match_dist):
                 if fi - active[tid]["last_frame"] > max_gap_frames:
                     del active[tid]
 
-    for frame in decode_frames(video_path, fps):
+    for frame in decode_frames(video_path, fps, frame_size(video_path)):
         batch_frames.append(frame)
         if len(batch_frames) == BATCH:
             process_batch(batch_frames, frame_idx - len(batch_frames) + 1)
@@ -237,7 +254,9 @@ def main():
         t0 = time.time()
         tid, fidx, box, kp = track_clip(path, model, args.fps, args.imgsz, args.conf,
                                          args.max_gap_frames, match_dist)
-        np.savez_compressed(out_npz, fps=args.fps, track_id=tid, frame_idx=fidx, box=box, kp=kp)
+        fw, fh = frame_size(path)
+        np.savez_compressed(out_npz, fps=args.fps, track_id=tid, frame_idx=fidx, box=box, kp=kp,
+                            frame_w=fw, frame_h=fh)  # coordinate space of box/kp
         activity = build_activity(tid, fidx, box, kp, args.fps)
         with open(out_act, "w") as fh:
             json.dump(activity, fh)
