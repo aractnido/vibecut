@@ -60,9 +60,28 @@ it can't add range the camera never captured, and every version looked flatter t
 **Fragments on demand, not a standardization pass.** Converting every clip up front (HDR->SDR,
 fps, rotation) processes hours of footage nobody sees and adds an encode generation. Instead each
 shot's conversion + framing happens inside its fragment encode, keyed by source/in/out/chain/
-title/encoder (`render_cached.py`). Song 01 of the second show: 24 shots encoded in ~40 min the
-first time; re-assembled from cache in seconds. Keep the processed clips (`corrected/`,
-`stabilized/`) until the show is final -- they are the cache's sources.
+title/encoder (`render_cached.py`). An unchanged song re-assembles from cache in seconds. Keep the
+processed clips (`corrected/`, `stabilized/`) until the show is final -- they are the cache's sources.
+
+**GPU first, CPU only where no GPU filter exists -- the user's standing rule, not a tuning detail.**
+The first cached renderer decoded on the CPU and blurred a full 4K frame per output frame: ~4 fps per
+GoPro shot, ~22 shots an hour, ~1 day for one show. `render_cached.py` now decodes on NVDEC for
+every camera, scales fixed SDR cameras with `scale_cuda` (frames stay on the GPU), does phones'
+HLG->SDR tone map AND resize in one `libplacebo` (Vulkan) pass, blurs the background from a 960x540
+copy (the one CPU filter, at 1/16 of the pixels) and encodes on NVENC: ~0.8-1.1x real time per shot,
+5-7x faster. Any step left on the CPU must be named as such and justified ("no GPU equivalent in
+this ffmpeg build"), never inherited silently from an older script.
+
+**Cutting a shot out of a long clip -- three rules, each from a real bug:**
+1. `-i clip -ss X` (output seek) is frame-exact but runs every frame from the clip start through the
+   WHOLE filter chain and drops them at the output -- most of the render time went to filtering
+   discarded 4K frames.
+2. `-ss X -i clip` (input seek) alone restarts the timestamps, which changes which frames a
+   29.97->30 fps conversion duplicates (not frame-identical to the reference, tested).
+3. So: `-ss X-3 -copyts -start_at_zero -i clip`, trim with margin, `fps=30:start_time=0` (grid at the
+   clip's t=0), cut on that grid, and take each shot's frame count from the SONG's running timeline
+   (frames to its end minus frames to its start). Every cut lands within half a frame of the script
+   and per-shot rounding can't accumulate (it had: one shot came out a frame short with time-based trims).
 
 **The director is a priority ORDER, not a bonus.** Crowd moment > forced variety > preferred video
 sources > score. Activity has no fixed scale: 0.02-0.08 between cameras at one show, 1-2 at another
@@ -819,6 +838,10 @@ concurrency isn't GPU-session-limited and could go higher if CPU/decode throughp
 both exactly 0.0) while cutting wall-clock time by ~42% on an 8-second segment. `crop` still needs a
 `hwdownload` first since no GPU crop filter exists, but everything before it -- decode and the
 expensive scale -- now runs on NVDEC/the GPU instead of the CPU.
+
+*(Superseded for new shows: `render_cached.py` takes the GPU path for these treatments too -- the user's
+rule is GPU first, and a sub-1/255 background-blur difference isn't worth a 5-7x slower render. The
+history below explains why `render_song.py` stayed on the CPU.)*
 
 **The portrait/GoPro blur-fill treatments (`PORTRAIT_FC`/`GOPRO_FC`) deliberately were NOT converted**,
 despite building and testing a working GPU version (`scale_cuda` for both bg/fg layers, `hwdownload`/
