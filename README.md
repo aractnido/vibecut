@@ -40,20 +40,33 @@ pose model (`ultralytics`).
 
 ## Quick start 🚀
 
-See `SKILL.md` for the full walkthrough and what each flag means. Short version, from your show's
-working folder:
+The agent starts by asking you a few questions — which cameras you had, your **preferred video
+sources** and your **preferred audio sources** (often not the same), which camera covers every
+song, whether any camera sees the dance floor — and writes them into a `show.json`
+(`examples/show.example.json` documents every key). Then, from your show's working folder:
 
 ```powershell
-py scripts\build_masters.py --out Masters --song-windows windows.csv --labeled nikon=<dir> --labeled gopro1=<dir>
-py scripts\build_timeline.py --out timeline.json --masters-manifest Masters\manifest.json --song-windows windows.csv
-py scripts\extract_people.py Masters Masters-Activity
-py scripts\build_highlights_edl.py
-py scripts\render_song.py 01
+py scripts\sync_to_anchor.py          # every clip placed on one timeline, by audio
+py scripts\build_soundtrack.py        # soundtrack from your preferred audio sources, per-camera stems kept
+py scripts\extract_people.py <clips> <people>   # per camera: who's in frame, how much they move
+py scripts\link_signals.py
+py scripts\floor_energy.py            # dancing on the floor, for crowd moments
+py scripts\build_highlights_edl.py    # the director writes the scene script
+py scripts\render_cached.py 01        # render one song, review it, then the rest
 ```
+
+Rendering goes through a fragment cache: every shot is encoded once (phone HDR converted to SDR on
+the way), so when you say "not that camera here", only that shot is re-encoded.
+
+A show with one continuous camcorder master still works the original way (`build_masters.py` →
+`build_timeline.py` → `build_highlights_edl.py` → `render_song.py`, see `SKILL.md`).
+
+## Requirements ⚙️ (in addition to the above)
+
+`scipy` for sync and the soundtrack; an `ffmpeg` build with Vulkan/`libplacebo` for the GPU HDR→SDR
+conversion.
 
 ## Status
 
-Built and proven end-to-end on a real 22-song, 5-camera show. The per-show director/render
-scripts (`build_highlights_edl.py`, `render_song.py`) still hardcode some show-specific
-assumptions (a fixed show-root path via `VIVECUT_SHOW_ROOT`, a 4-role band/camera layout) —
-treat them as a working reference implementation to adapt, not a drop-in CLI tool yet.
+Proven end-to-end on two real shows: a 22-song, 5-camera show with a camcorder master, and a
+25-song show with no master at all (two fixed action cams + two phones, one of them vertical).
