@@ -36,7 +36,9 @@ Every show has a different mix of cameras and the user has opinions about them. 
     a sung melody was soft; tempo trackers rate a gentle sing-along faster than a hard rock song, and a
     loudness/onset/flatness score put the hardest song in the soft half). Don't trust audio features here.
 11. **Fixed-camera moves**: virtual push/zoom on the fixed cams? Which camera is too far for anything but
-    zooms? Is any part of a fixed camera's frame empty or uninteresting (framings must stay out of it)?
+    zooms? For EACH fixed camera, show one full frame with a 10 % grid and ask what the shot must keep
+    (the band, the band's logo/sign) and what it must never show (PA, empty floor, a TV, people filming)
+    -- that becomes its keep rectangle.
     Is the vertical cut + fill (below) welcome, and how often (default: occasional variation only)?
 12. **Crowd participation moments** the user knows about (a song where the room does a gesture): the
     floor should be on screen then. Ask; don't infer it from the lyrics.
@@ -173,10 +175,21 @@ from virtual-PTZ research), then tuned by review:
   log space, hold one beat at each end so the camera is STILL at every cut. Speed limit = the fastest
   moves the user liked: 0.03 log-zoom/s (they ran 0.014-0.028; 0.064 was "too fast"); a short shot makes
   a smaller move, never a faster one; pieces under 2 bars hold still.
-- **Far camera = zooms only, on a fill**: past ~1.1x enlargement the zoomed window stops growing and
-  sits sharp on a blurred copy of the wide shot instead of being upscaled soft.
-- **Empty regions**: a framing never extends past the outermost musician + a small margin on the side
-  the user called empty (also tighten the "wide" a few % so the limit applies from the first frame).
+- **Far camera = zooms only, motivated, on a little fill**: alternating in/out on every shot was
+  "exaggerated, predictable" -- push in only if the main musician gets busier through the shot, pull out
+  if calmer, else hold the wide (max ~1.45x). The fill is NOT the zoom: a version where the window grew
+  while the picture scale stayed constant read as "moving the filling", a fake zoom. Make the picture
+  scale really change and let the window shrink by only part of it:
+  `pos_w = OW * min(1, sqrt(crop_w * UPS / OW))` (UPS ~1.15) -- real zoom, a thin fill only at the tightest.
+- **Keep regions, not detections, for fixed cameras**: ask the user what each fixed camera's shot must
+  contain (here: the band AND the band's neon logo) and what it must not (a PA speaker on one side, empty
+  floor, a TV, people filming at the edge). Store one normalised rectangle per fixed camera; the wide is
+  the smallest 16:9 crop holding it. Limits computed from detected people failed -- a person on the floor
+  or by the PA loosened them. Pushes are crops INSIDE that wide, anchored to its TOP edge: they move
+  toward the band and the logo and "never go down" to the floor; keep the outermost musician whole.
+- **Busy floor widens the wide**: when >= 1 person is dancing on average over a shot (top ~12 % of shots),
+  the floor-facing camera's wide reaches the crowd, still anchored high -- the user liked seeing the room
+  jump, as long as the frame didn't sink to the floor.
 - **Vertical cut + fill** (a 9:16 slice at nearly full sensor height on a blurred fill -- a sharp
   single-musician close-up): VARIATION only (<= 2 per song, >= 60 s apart, never in the first 20 s --
   open on an establishing shot), exactly one 4-bar phrase long.
