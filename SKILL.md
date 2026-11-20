@@ -187,6 +187,13 @@ from virtual-PTZ research), then tuned by review:
   the smallest 16:9 crop holding it. Limits computed from detected people failed -- a person on the floor
   or by the PA loosened them. Pushes are crops INSIDE that wide, anchored to its TOP edge: they move
   toward the band and the logo and "never go down" to the floor; keep the outermost musician whole.
+  Agree the rectangle WITH the user on a full frame: draw two yellow horizontal lines (top of the band
+  incl. the logo, bottom = just below the lowest feet / stage props) and a green vertical line for the
+  side never to show, and adjust until they say yes (it took three rounds: the bottom line had to drop
+  below a stage prop and the performer's feet; the side line moved left so the logo wasn't cut).
+  On the far camera the push target is the wide's UPPER-LEFT corner region (going up also goes left,
+  toward the band, away from an empty side), and any shot longer than ~16 s always makes a slow move
+  (direction from the activity trend) -- a 34 s frozen wide read as dead.
 - **Busy floor widens the wide**: when >= 1 person is dancing on average over a shot (top ~12 % of shots),
   the floor-facing camera's wide reaches the crowd, still anchored high -- the user liked seeing the room
   jump, as long as the frame didn't sink to the floor.
