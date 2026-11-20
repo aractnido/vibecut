@@ -27,9 +27,29 @@ Every show has a different mix of cameras and the user has opinions about them. 
 7. **Performer framing preferences**, if any (e.g. someone prefers fewer shots from behind).
    Record it neutrally in `director.avoid_shots`; don't put reasons in files.
 8. **Final look**: SDR (default -- see "Color" below) and the song title banner (title only by default).
+9. **Output size and where things go**: 4K or 2K (at 2K a ~3K GoPro fills the frame; no inset needed),
+   the review folder (render there first) and the publish folder (only on the user's go; keep 4K and
+   2K side by side as e.g. `MultiCam.4K.AI` / `MultiCam.2K.AI` rather than overwriting).
+10. **Per-song style -- harsh or soft.** Propose a two-column split and let the user flip songs; ask why
+    when you disagree and write the reason down. Harsh = plain cuts, normal-speed moves; soft = short
+    dissolves, half-speed moves. The MELODY decides, not tempo or guitar weight (a heavy riff song with
+    a sung melody was soft; tempo trackers rate a gentle sing-along faster than a hard rock song, and a
+    loudness/onset/flatness score put the hardest song in the soft half). Don't trust audio features here.
+11. **Fixed-camera moves**: virtual push/zoom on the fixed cams? Which camera is too far for anything but
+    zooms? Is any part of a fixed camera's frame empty or uninteresting (framings must stay out of it)?
+    Is the vertical cut + fill (below) welcome, and how often (default: occasional variation only)?
+12. **Crowd participation moments** the user knows about (a song where the room does a gesture): the
+    floor should be on screen then. Ask; don't infer it from the lyrics.
+13. **Is the final audio coming from elsewhere** (a separate mixing session)? Then render video first and
+    mux the delivered per-song audio afterwards; never use a recording that has gaps between songs.
 
 Read the user's reasons as reasons: "use the phone more, the fixed cams are far and dark" asks for
 ONE change (the priority); it doesn't also ask to zoom or brighten the fixed cams.
+
+**How to run a review with the user** (they review late at night; keep the load low): one point per
+message, short prose, at most one yes/no question. Show candidates as a contact sheet, ONE frame per
+moment, labelled with natural numbers (1, 2, 3 -- not timestamps), so they can answer "3, 5, 7 are real".
+Never start renders while they are still looking or asking; never chain the next build after a result.
 
 ## Shows without a continuous master: the `show.json` pipeline
 
@@ -51,6 +71,18 @@ from `$VIVECUT_SHOW_ROOT`):
 Render ONE song first and have the user review it before the rest (`render_cached.py 01`); every
 later change is cheap because unchanged shots come from the cache.
 
+**Delivery gotchas (all hit on real files):**
+- Song titles with apostrophes ("Sweet Child O' Mine", "We're Not Gonna Take It") break ffmpeg concat
+  lists (both `'\''` and backslash escaping failed) and shell loops. Join through hard links with plain
+  names (`01.mp4`...) and do file loops in Python.
+- The full-show builder globs `NN-*.mp4` -- exclude `00-*` or a rebuild swallows the previous full show.
+- Replacing one or two songs in a published full show needs no re-encode: re-join the video streams of
+  the 25 song files (stream copy) and copy the existing crossfaded audio track over; lengths stay equal.
+- Recompute the YouTube chapters from the actual song durations after any re-render (1 s shifts happen).
+- Final audio delivered later as per-song FLACs: place each by GCC on several windows (majority of 4
+  agreeing within 50 ms) and mux by stream copy; a whole-show FLAC built from untrimmed song files runs
+  long -- build the crossfaded show audio from per-song windows instead (`acrossfade` 1 s, triangular).
+
 **Color.** Phones usually record HLG HDR (BT.2020, 10-bit); fixed cams SDR. Mixed unconverted, the
 phone shots look washed out next to the SDR shots. Make the final video SDR and convert the phones
 (`prep: "hlg_to_sdr"`: libplacebo on the GPU, Hable curve -- visually matched the CPU zscale chain
@@ -70,7 +102,11 @@ every camera, scales fixed SDR cameras with `scale_cuda` (frames stay on the GPU
 HLG->SDR tone map AND resize in one `libplacebo` (Vulkan) pass, blurs the background from a 960x540
 copy (the one CPU filter, at 1/16 of the pixels) and encodes on NVENC: ~0.8-1.1x real time per shot,
 5-7x faster. Any step left on the CPU must be named as such and justified ("no GPU equivalent in
-this ffmpeg build"), never inherited silently from an older script.
+this ffmpeg build"), never inherited silently from an older script. **This includes analysis scripts**:
+a scan that sampled frames with `cv2.VideoCapture` + seeks ran 29 minutes on the CPU; the same scan
+reading frames from `ffmpeg -hwaccel cuda ... -vf fps=2 -f rawvideo -pix_fmt bgr24 -` took ~10. Before
+running anything that reads video, check how it decodes, and print progress per song so a slow path
+shows up in a minute. (Lens correction's full-rate 4K read is the measured exception, see below.)
 
 **Cutting a shot out of a long clip -- three rules, each from a real bug:**
 1. `-i clip -ss X` (output seek) is frame-exact but runs every frame from the clip start through the
@@ -83,6 +119,16 @@ this ffmpeg build"), never inherited silently from an older script.
    (frames to its end minus frames to its start). Every cut lands within half a frame of the script
    and per-shot rounding can't accumulate (it had: one shot came out a frame short with time-based trims).
 
+**Variable-frame-rate phones are standardized to constant 30 fps -- never trust the declared rate.**
+Some phones (a Samsung at the second show) record variable frame rate: frame gaps from 2 ms to 67 ms,
+and the header's `r_frame_rate` says 30, 29.97, 60 or 240 on different clips while the real rate is
+~30. Check every phone camera once: `ffprobe -show_entries stream=r_frame_rate,avg_frame_rate` (they
+disagree on a VFR clip), or the spread of the frame-timestamp gaps. If a camera is VFR, the standardized
+fragment re-times it to constant 30 fps FROM ITS REAL TIMESTAMPS: the `fps=30:start_time=0` step in rule 3
+above, applied to every source (an iPhone's steady 29.97 goes through the same grid). Any step that
+computes time from a frame index or the declared rate (frame counts, `-r`, seeking by frame number) drifts
+on these clips -- always work in timestamps, then let the 30 fps grid do the conversion.
+
 **The director is a priority ORDER, not a bonus.** Crowd moment > forced variety > preferred video
 sources > score. Activity has no fixed scale: 0.02-0.08 between cameras at one show, 1-2 at another
 where a fixed camera saw a whole moving crowd, so a "+0.6 preferred camera" bonus still lost 22 of
@@ -93,6 +139,83 @@ the signal it competes with.
 walking removed) inside each fixed camera's floor rectangles. A 10 s mean of 1.5 people dancing was
 the 97th percentile at the second show and gave 13 crowd shots, all in the liveliest songs; 2.5 gave
 one. Pick the threshold from the show's own percentiles.
+
+**Full coverage skips near misses (known limitation).** A camera is a candidate for a shot only if it
+covers the WHOLE window (the invariant below). With ~16 s windows a 23 s phone clip that starts 8 s after
+one window and ends 1 s before the next is never used, however good it is. If the user asks "why wasn't
+that clip used?", this is the usual answer; a fix would let the director shorten a window to fit.
+
+**Per-clip orientation.** One phone can mix vertical and horizontal clips. Choose the framing per CLIP
+from its displayed shape (width/height after the rotation tag), not per camera: a per-camera
+"landscape crop" turned two vertical clips into a zoomed-in slice of the middle.
+
+**Phone sync: the trusted-clock rule.** Phones keep good network time, but each phone has its own
+steady error (~1 s behind on one Android, scatter ~0.3 s; whole-second `creation_time`). For each clip:
+predict its offset from its clock plus the error MEASURED on the nearest verified clip of the same
+phone; search only +-1.5 s around that (never widen -- the old +-25 s fallback locked onto a riff
+repeat 21 s away); score many 4 s windows every 1.5 s (count a window at z >= 5); take the largest
+cluster agreeing within 30 ms, accept if >= 3 windows and >= 40 % of the counted ones; reject any
+placement that overlaps another clip from the same phone. It recovered a clip the old search had
+dropped ("perfectly on sync" on review), and when re-run it also nudged OTHER clips by small amounts --
+apply only the clips you set out to fix, not the whole re-measured timeline.
+
+### Cinematic camera work on the fixed cameras (reviewed shot by shot with the user)
+
+Virtual moves are crops of the fixed GoPros, rendered on the GPU (`libplacebo` with per-frame
+`crop_x/crop_y/crop_w/crop_h` and `pos_*` expressions: sub-pixel, no jitter; NVDEC in, NVENC out).
+Principles from cinematography (motivated moves, ease in/out, restraint, hold-move-hold "re-cinematography"
+from virtual-PTZ research), then tuned by review:
+
+- **One move per shot, motivated**: a slow push-in or pull-out (alternating shot to shot) toward the
+  musician moving most (pose keypoint motion over the shot). Following pans between musicians
+  ("re-frame when the action shifts") was tried and rejected.
+- **Easing and speed**: smootherstep (zero speed and acceleration at both ends), zoom interpolated in
+  log space, hold one beat at each end so the camera is STILL at every cut. Speed limit = the fastest
+  moves the user liked: 0.03 log-zoom/s (they ran 0.014-0.028; 0.064 was "too fast"); a short shot makes
+  a smaller move, never a faster one; pieces under 2 bars hold still.
+- **Far camera = zooms only, on a fill**: past ~1.1x enlargement the zoomed window stops growing and
+  sits sharp on a blurred copy of the wide shot instead of being upscaled soft.
+- **Empty regions**: a framing never extends past the outermost musician + a small margin on the side
+  the user called empty (also tighten the "wide" a few % so the limit applies from the first frame).
+- **Vertical cut + fill** (a 9:16 slice at nearly full sensor height on a blurred fill -- a sharp
+  single-musician close-up): VARIATION only (<= 2 per song, >= 60 s apart, never in the first 20 s --
+  open on an establishing shot), exactly one 4-bar phrase long.
+- **Never reframe on the same camera** -- landscape -> vertical or vertical -> landscape on one camera
+  reads as a cheap "pop" (a jump cut). A vertical always has a different camera on both sides: enter it
+  from a phone or the song start, leave it to the preferred phone (else another camera). Entering it
+  from the far wide camera was the harshest transition of all (distance, shape and angle all change).
+- **Music bars matter**: find downbeats (beat phase with the strongest low-end accent) and 4-bar
+  phrases (the phase whose boundaries sit on the biggest beat-synced chroma+MFCC change), then move
+  every camera cut to the nearest phrase boundary within 2 bars -- if both cameras have footage there
+  and the move doesn't push a camera into an avoided moment. A vertical that ran past the phrase "felt
+  like the music told us it was time to change".
+- **No cut while someone crosses the stage**: a dissolve while the bassist rushed to the mic was
+  disliked; the fixed cameras as a stage motion sensor (torso-centre travel over 0.5 s, confident
+  points only) read 0.66 body-heights/s there vs 0.13-0.24 at every liked transition. Threshold 0.35
+  (flags ~4 % of a song); if every candidate time is busy, take the calmest beat within 2 beats.
+- **Per-song style** (question 10): harsh songs keep plain cuts; soft songs get 20-frame dissolves
+  centred on every cut (`xfade_vulkan` on the GPU; each fragment rendered with 10-frame handles, frozen
+  frames only where a clip has no footage past the cut) and moves at half speed.
+- **Open ideas from review, not built**: when the floor is very active, avoid fixed-cam -> fixed-cam
+  cuts (go to a phone that sees the floor); the room's gesture moments (question 12) should show the floor.
+
+Workflow that worked: 1-minute A/B/C... variants of ONE song, then 5-second clips with one transition
+each (a harsh song with plain cuts, a soft one with dissolves) so every transition type is judged in
+isolation, then the whole show. Keep the preferred phone's priority: the moves are for the fixed cams.
+
+### Performer framing: a detector the user trains in two rounds
+
+For a "fewer shots of X from behind" preference: crop X's head from the SKELETON (head keypoints, else
+above the shoulders) -- not the top of the person box, which follows raised arms and scored hands as
+"back of head". Score each crop with CLIP zero-shot (face-with-glasses vs back-of-head prompts) AND a
+small logistic probe trained on CLIP embeddings of the user's labelled frames; a frame counts only if
+both agree. Validate leave-one-moment-out before trusting it (an arms-raised veto looked good and
+failed on a real back view with an arm up). Show a numbered contact sheet, one frame per moment; the
+user labels "real / almost / wrong person" -- false alarms in close shots were a DIFFERENT person in
+the performer's usual spot, so check identity before calling the classifier wrong. Fix confirmed
+moments surgically in the scene script: leave the camera on the last beat before the turn, come back
+on the first beat after, plain cuts, no leftover under 2 s, replacement = neighbouring shot's camera,
+else preferred phone, else another fixed cam. Re-render only the songs that changed.
 
 ### Lessons from the second show (no master, GoPros + phones)
 
