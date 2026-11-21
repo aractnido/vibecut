@@ -109,10 +109,11 @@ def shake(clip, a, b):
     sw, sh = _dims(clip)
     fr = _frames(clip, a, b, sw, sh)
     y0, y1 = int(ROI[0] * fr.shape[1]), int(ROI[1] * fr.shape[1])
-    x = torch.from_numpy(np.ascontiguousarray(fr[:, y0:y1])).to("cuda", torch.float32)
+    roi = fr[:, y0:y1]
     steps = []
-    for i in range(0, len(x) - 1, 128):                    # chunks of 129 frames (1 overlap)
-        steps.append(global_lk(x[i:i + 129]).cpu().numpy())
+    for i in range(0, len(roi) - 1, 128):                  # chunks of 129 frames (1 overlap), uploaded per chunk
+        x = torch.from_numpy(np.ascontiguousarray(roi[i:i + 129])).to("cuda", torch.float32)
+        steps.append(global_lk(x).cpu().numpy())
     st_ = np.concatenate(steps) * DOWN
     dx, dy = [0.0] + list(st_[:, 0]), [0.0] + list(st_[:, 1])
     dr = [0.0] * len(dx)
