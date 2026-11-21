@@ -257,6 +257,34 @@ measurement have their own caches. The frame grid matches `render_cached.py`, so
 How it was reviewed: draw a 10 % grid on 3 frames of the shot (start, middle, end) and let the user say where the
 top line goes; render 10 s tests first; then the full shot, then one variable at a time.
 
+### Edit pacing: measure it, then add soft rules (`scripts/edit_stats.py`)
+
+Hard rules and metadata define what is possible at each moment: who has footage, phrases, how far a clip can zoom,
+shake, stage crossings. Soft rules are preferences the director weighs among those options. When the user asks
+"are we cutting too much / too randomly?", run `edit_stats.py` on the published sidecars before answering.
+
+What the first full show measured (25 songs, 107 min):
+- 2.9 camera changes per minute and a median take of 15 s (p10 6.5 s, p90 43.5 s), slower than music videos
+  (2-3 s) and typical concert films (4-8 s). That is fine when the preferred phone carries the story (43 % of the
+  time, median take 43 s).
+- 82 % of cuts land on a phrase boundary. Next-camera choice is far from random (0.90 bits vs 1.58 random).
+- The edit READ as random anyway, because of three patterns:
+  - Fixed cam -> fixed cam direct cuts were 59 % of all cuts: with the phone unavailable, the director bounced
+    between the two GoPros.
+  - 54 ping-pongs (A -> B -> A with B < 8 s, 17 % of cuts).
+  - 11 takes under 4 s (the shortest 0.6 s), which look like mistakes.
+- Soft songs were NOT slower (median 14.0 s harsh vs 15.4 s soft): the style changed only the transition type.
+
+Soft rules the user approved from that analysis (to wire into the director):
+1. **Avoid fixed -> fixed cuts and ping-pong.** Penalise a direct cut between two fixed cameras; prefer going
+   through a phone. Penalise A -> B -> A when B would last under ~8 s: extend A or B instead.
+2. **Minimum take of one 4-bar phrase** (~7 s at 130 BPM). A take shorter than that merges into its neighbour,
+   unless that would break a hard rule (no footage, an avoided moment).
+3. **Soft songs hold longer:** target take length ~1.5x the harsh songs' (on top of dissolves and half-speed
+   moves), per the research: gentle songs hold angles, energetic ones cut faster.
+Re-run `edit_stats.py` after the change; the targets are fixed->fixed well under half of cuts, ping-pong near
+zero, no take under one phrase, and soft median ~1.5x harsh.
+
 Workflow that worked: 1-minute A/B/C... variants of ONE song, then 5-second clips with one transition
 each (a harsh song with plain cuts, a soft one with dissolves) so every transition type is judged in
 isolation, then the whole show. Keep the preferred phone's priority: the moves are for the fixed cams.
