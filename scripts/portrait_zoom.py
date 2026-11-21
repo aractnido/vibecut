@@ -168,14 +168,15 @@ def _lin(keys, i):
     return "(" + "+".join(blocks) + f"+gte(t,{keys[-1][0] - 0.0001:.2f})*{keys[-1][i + 1]:.2f})"
 
 
-def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.15, 0.5), work="scratch"):
+def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.15, 0.5), work="scratch",
+             fill_sigma=8.0):   # user picked 8 of 4/8/12 at 640x360: only light and colour, no recognisable people
     """Render (or reuse) one shot. a/b: clip-local in/out; m0/m1: zoom start/end in shot time.
     Returns (path, hit)."""
     keys, info = plan(clip, npz, a, b, m0, m1, out_h)
     spec = {"src": _stat(clip), "pose": _stat(npz), "in": round(a, 3), "out": round(b, 3), "frames": n_frames,
             "zoom": [round(m0, 3), round(m1, 3)], "limits": [HEADROOM, FOOTROOM, BOT_MAX], "real_min": REAL_MIN,
             "ssim_ok": SSIM_OK, "f_eff": info["f_eff"], "stab": list(stab), "shake": [WS.VERSION, WS.SIGMA_S, WS.ROI],
-            "size": [out_w, out_h], "enc": NVENC, "v": VERSION}
+            "size": [out_w, out_h], "fill_sigma": fill_sigma, "enc": NVENC, "v": VERSION}
     key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:20]
     path = os.path.join(CACHE, key + ".mp4")
     if os.path.exists(path) and os.path.exists(path + ".json"):
@@ -195,7 +196,7 @@ def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.
            f"trim=start={(round(a * 30) - 0.5) / 30:.5f},setpts=PTS-STARTPTS,trim=end_frame={n_frames}[cut];")
     vf = (cut + "[cut]split=2[p][q];"
           f"[p]libplacebo=w=640:h=360:crop_w='{CW}':crop_h={BH:.1f}:crop_x='{CX}':crop_y='{BY}':{TONEMAP}:"
-          f"format=yuv420p,gblur=sigma=4,scale={out_w}:{out_h}[bg];"
+          f"format=yuv420p,gblur=sigma={fill_sigma},scale={out_w}:{out_h}[bg];"   # blur at 640x360
           f"[q]libplacebo=w={out_w}:h={out_h}:crop_w='{CW}':crop_h='{CH}':crop_x='{CX}':crop_y='{CY}':"
           f"pos_w='{PW}':pos_h={out_h}:pos_x='({out_w}-{PW})/2':pos_y=0:fillcolor=black@0:{TONEMAP}:"
           "format=yuva420p[fg];[bg][fg]overlay=0:0:format=auto,format=yuv420p10le[v]")
