@@ -219,6 +219,44 @@ from virtual-PTZ research), then tuned by review:
 - **Open ideas from review, not built**: when the floor is very active, avoid fixed-cam -> fixed-cam
   cuts (go to a phone that sees the floor); the room's gesture moments (question 12) should show the floor.
 
+### Vertical phone shot -> almost horizontal (`scripts/portrait_zoom.py`, cached)
+
+A vertical clip normally sits full height on a blurred fill. A long vertical shot can instead slowly zoom until it
+is nearly landscape, cutting away the top (ceiling, wall) and a little of the bottom (floor, cables). Each rule
+below came from a review round on one 47 s shot:
+
+- **Limits from the band, never a fixed line.** A hand-set top line was right at the start and cut every head
+  40 s later, after the operator stepped closer. Use pose data (`extract_people.py`): top = the highest person's
+  box top minus 4 % (hard, never cuts a head); bottom = the lowest ankle plus 3 %, capped at 92 % (soft). A ±2 s
+  envelope then a 1.5 s Gaussian, so the window moves before anyone would be cut.
+- **Quality limit from measured detail, not a percentage.** "Stop at 85 %" was arbitrary. The user's rule: never
+  enlarge a pixel. A phone's nominal 4K is not real 4K, though: noise reduction, HEVC, low light and stabilization
+  leave a dim stage with about 50 % of the nominal detail. `effective_detail()` measures it per clip on the GPU:
+  shrink the band region, enlarge it back, and find where SSIM drops (threshold 0.9925, interpolated). The screen
+  must get at least 65 % of a true output picture (SSIM about 0.996, the framing the user called balanced):
+  `window height >= OUT_H * 0.65 / f_eff`. When the band needs less, open half below the feet and the rest above
+  the heads, so the extra is more wall and logo, not floor. Width is always the full frame: only the height sets
+  sharpness, so the picture ends slightly narrower than the output, with thin fill strips.
+- **Time it in phrases.** A 2.9x zoom from far away in 10 s was dizzy, and 13 s was still too fast. "Perfect" was
+  3 phrases (12 bars, phrase boundary to phrase boundary, about 0.05 log-zoom/s). Give bigger zooms more phrases.
+  The zoom is in log space toward a fixed point, with smootherstep; after it, the window keeps following the band.
+  Ending on a lyric stanza was tried (Whisper word times): it gave 8 or 16 bars and nothing better.
+- **Shake: slow sway only, half strength** (`scripts/window_stabilize.py`). The window has spare margin, so it can
+  follow the content at no quality cost (horizontally the window narrows by the sway, which costs only width).
+  The motion is measured on the GPU with a robust global Lucas-Kanade; phase correlation aliased on evenly spaced
+  wall planks, and CPU corner tracking was worse than nothing. Removing all the shake frame by frame made the
+  image warp "like water": rolling shutter bends each frame, and parallax slides the other depths. Of four
+  variants (half / vertical only / slow sway only / slow sway half) the user picked slow sway half.
+- **The fill is derived data.** It reads the same stabilized window, so it never shakes on its own.
+
+**Cache:** `fragment()` keys each shot on everything that decides its pixels: source (path, size, mtime), in/out,
+frame count, pose file, every limit, quality, zoom and shake parameter, the measured `f_eff`, output size, encoder
+and `VERSION`. A hit is reused; a miss is rendered and stored with its spec. The shake path and the detail
+measurement have their own caches. The frame grid matches `render_cached.py`, so fragments join with `-c copy`.
+
+How it was reviewed: draw a 10 % grid on 3 frames of the shot (start, middle, end) and let the user say where the
+top line goes; render 10 s tests first; then the full shot, then one variable at a time.
+
 Workflow that worked: 1-minute A/B/C... variants of ONE song, then 5-second clips with one transition
 each (a harsh song with plain cuts, a soft one with dissolves) so every transition type is judged in
 isolation, then the whole show. Keep the preferred phone's priority: the moves are for the fixed cams.
