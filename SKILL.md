@@ -248,6 +248,9 @@ below came from a review round on one 47 s shot:
   image warp "like water": rolling shutter bends each frame, and parallax slides the other depths. Of four
   variants (half / vertical only / slow sway only / slow sway half) the user picked slow sway half.
 - **The fill is derived data.** It reads the same stabilized window, so it never shakes on its own.
+- **Blur the fill until nothing in it is recognisable.** At the old blur (sigma 4 at 640x360) people and a guitar
+  could still be made out, enlarged on the sides, and pulled the eye. Of 4 / 8 / 12 the user picked 8: only light
+  and colour remain.
 
 **Cache:** `fragment()` keys each shot on everything that decides its pixels: source (path, size, mtime), in/out,
 frame count, pose file, every limit, quality, zoom and shake parameter, the measured `f_eff`, output size, encoder
