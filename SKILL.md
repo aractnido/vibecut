@@ -285,6 +285,44 @@ Soft rules the user approved from that analysis (to wire into the director):
 Re-run `edit_stats.py` after the change; the targets are fixed->fixed well under half of cuts, ping-pong near
 zero, no take under one phrase, and soft median ~1.5x harsh.
 
+### Song map: what the music is doing, as director metadata (`scripts/song_map.py`)
+
+Cuts landed on phrases, but the director knew nothing about what the music was doing inside them. The song map
+gives it that, per bar and per 4-bar phrase. **Lyrics are a hint, never the source of truth**: the separated
+stems carry the reliable signals.
+
+Pipeline: separate, analyze, discard. HTDemucs splits the song window into vocals / drums / bass / other, in
+memory on the GPU, in about 4 s per song. The stems are disposable (the user's rule: keep only the metadata;
+re-run if more is needed), so nothing is written to disk. Whisper large-v3 transcribes the vocal stem, and the
+features (envelopes, onsets, chroma, timbre bands) are measured with torch on the GPU. One Python environment
+needs torch, demucs, openai-whisper and scipy.
+
+| Signal | From | Director use (soft rules, not wired yet) |
+|---|---|---|
+| singing on/off | vocal-stem level | don't cut in the middle of a sung line; with no singing, the camera goes to the instruments |
+| solo | guitars/keys loud while vocals are silent | go to the soloist; the moment for the fixed-cam vertical close-up |
+| drum fill | onset burst in the last bar of a phrase | the classic cut point: cut as the fill ends |
+| sections / chorus | Ward clustering of chroma + timbre + vocal share + drums + energy; repeating lyrics | chorus starts are the strongest cuts and the time for wides; verses hold on the singer |
+| energy per phrase | full mix + drum density | busy sections get shorter takes, calm ones longer |
+| crowd | repeating hooks + dancing counts | show the room when it sings along or dances |
+| banter | voice with the band silent | not music |
+| grid check | where stanza-first lines start in the phrase | flags a phrase grid shifted by a bar |
+
+What review taught:
+- **Language per song, from a table the user confirms** (they flipped nothing). Detecting it per 30 s window
+  failed: banter made a Spanish song "English", and Whisper then invented English lines.
+- **Whisper's hallucination rule must be the combined one.** Sung lines over music score no_speech_prob around
+  0.9, so dropping on that alone threw out every lyric. Drop only when no_speech > 0.6 AND avg_logprob < -1.0,
+  plus compression ratio > 2.4 and stock phrases ("Thank you", "Subscribe to the channel"...).
+- **Sections need more than chords.** A live mix barely changes harmony or level between verse and chorus, and
+  chroma alone put a whole song in section A. Adding timbre, vocal share and drum density recovered verse /
+  chorus / breaks in a song the user knows well.
+- **Fills and the grid shift are per song.** Fills were clear in some songs (7) and absent in others (0). The
+  suggested phrase shift came out -1 in five songs, +1 in three and 0 elsewhere, and changed with small
+  transcription differences, so check it by ear before moving any grid.
+- Live vocals are hard: Whisper still misses whole sung stretches. This is why singing on/off comes from the
+  stem level, not from the text.
+
 Workflow that worked: 1-minute A/B/C... variants of ONE song, then 5-second clips with one transition
 each (a harsh song with plain cuts, a soft one with dissolves) so every transition type is judged in
 isolation, then the whole show. Keep the preferred phone's priority: the moves are for the fixed cams.
