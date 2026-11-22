@@ -30,6 +30,20 @@ Every show has a different mix of cameras and the user has opinions about them. 
 9. **Output size and where things go**: 4K or 2K (at 2K a ~3K GoPro fills the frame; no inset needed),
    the review folder (render there first) and the publish folder (only on the user's go; keep 4K and
    2K side by side as e.g. `MultiCam.4K.AI` / `MultiCam.2K.AI` rather than overwriting).
+   - **The layout one user settled on, with plain names:**
+     - `Video/` holds the version without lyrics;
+     - `Video.WithLyrics/` holds the version with lyric visuals;
+     - `Audio/` holds the per-song FLACs;
+     - each video folder has the songs, `00-Full-Show-AllSongs.mp4` and `Metadata/`;
+     - `Metadata/` holds the render sidecars, `STATS.html`/`STATS.md`/`stats.csv` and `youtube.txt`.
+   - **Publish only a finished version.** A review folder being re-rendered holds a mix of old and new songs.
+     Wait for the render, clean its `old/` archive, regenerate the stats, build the full show from that folder,
+     copy (overwriting if the user says so), and compare file sizes.
+   - **Don't rename folders that something still uses.**
+     - Renaming an output folder under a pending publish would silently recreate the old name: repoint the
+       publish first.
+     - Renaming a source folder (the audio FLACs the renderer muxes) mid-render breaks the remaining songs:
+       defer the rename until the renders finish, then update the paths in the scripts.
 10. **Per-song style -- harsh or soft.** Propose a two-column split and let the user flip songs; ask why
     when you disagree and write the reason down. Harsh = plain cuts, normal-speed moves; soft = short
     dissolves, half-speed moves. The MELODY decides, not tempo or guitar weight (a heavy riff song with
