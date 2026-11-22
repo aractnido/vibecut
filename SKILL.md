@@ -326,6 +326,41 @@ What review taught:
 - Live vocals are hard: Whisper still misses whole sung stretches. This is why singing on/off comes from the
   stem level, not from the text.
 
+### Director rules from the second review round (signals wired in, then tuned on real songs)
+
+The song map, the vertical zoom metadata and the pacing statistics went into the director. Then the user reviewed
+songs and every rule below came from a specific moment they pointed at.
+
+- **The preferred phone wins wherever it covers.** Any fixed-cam take the preferred phone fully covers becomes the
+  phone's. Its picture is better and it moves naturally, and the far fixed camera often shows the phone operator
+  filming, which "looks silly". A camera change is also never made AWAY from the preferred phone.
+- **Section starts are camera-change points.** A natural cut the user pointed at (a bridge starting after a drum
+  build-up, the voice coming back in) was never a cut, for two reasons. The director scored ~9 s windows with no
+  idea of song structure and picked the same fixed camera on both sides. Then ping-pong removal merged the short
+  inserts around it into a 62 s take. Rule: at each section start (song map letter change), if the current take
+  has run at least 1 phrase and at least 1 phrase remains, change camera there, phone first. If the boundary falls
+  mid-line, cut in the breath just before the voice comes back (here 0.9 s before the boundary). This also splits
+  the over-long takes the pacing rules created (cuts per minute had halved, with 30 takes over a minute).
+- **Vertical zoom inside the director:**
+  - **Start:** on the first BAR line after the shot starts. Not at the cut, and not at the next phrase (waiting a
+    phrase made 23-30 s shots ineligible).
+  - **Length:** set by the trip at the liked speed (about 0.05 log-zoom/s), at least 2 phrases. A dim clip that can
+    only zoom 1.7x needs 2 phrases; a 2.9x trip needs 3.
+  - **Partial zooms are fine:** a shot too short for the whole trip zooms over the whole phrases it has, at the same
+    speed. "Only by being able to do it, it gives better shots: wider, more dynamic."
+  - **Skipped:** horizontal clips, and clips with raw shake p95 over ~150 px.
+- **Far fixed camera: two phrases never sit still.** Shots of at least 2 phrases always make a slow move,
+  direction by the activity trend, with a 2-beat tolerance (beat tracker vs phrase grid). A 16 s threshold left
+  exactly-two-phrase shots (15.2 s) frozen. The move planner must use the SONG's beat: a 123 BPM constant left
+  over from the first test made holds and phrase lengths wrong in every other song.
+- **Dissolves on the beat.** Harsh songs: half a beat, an eighth note (A/B at 6 and 10 frames; 6 felt right at
+  139 BPM = 6.5 frames). Soft songs: two beats (A/B at 24/30/35 frames; about 29 at 126 BPM). Centred on the cut,
+  which is a downbeat, so the crossfade's midpoint lands on the beat. That gives 5-11 frames (harsh) and 24-44
+  (soft) across one show's tempos.
+- **A secondary phone can be not worth it.** A/B the same moments against the preferred phone before investing in
+  it. One side-angle phone (behind keyboards and drums, stage lights into the lens, darker) lost 3 of 3 and became
+  a last-resort fill only: no zoom, no pose extraction, no re-sync of its unverified clips.
+
 Workflow that worked: 1-minute A/B/C... variants of ONE song, then 5-second clips with one transition
 each (a harsh song with plain cuts, a soft one with dissolves) so every transition type is judged in
 isolation, then the whole show. Keep the preferred phone's priority: the moves are for the fixed cams.

@@ -138,7 +138,7 @@ def effective_detail(clip, a, b, rows=(0.42, 0.86)):
     return f_eff
 
 
-def plan(clip, npz, a, b, m0, m1, out_h, step=0.5):
+def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0):
     """Keyframes (shot time u, crop_y, crop_h) every `step` s + the parameters that decided them."""
     sw, sh = WS._dims(clip)
     f_eff = effective_detail(clip, a, b)
@@ -154,7 +154,7 @@ def plan(clip, npz, a, b, m0, m1, out_h, step=0.5):
         tp = max(0.0, tp - (extra - down))
         che = max(bt - tp, min_h)
         p = min(1.0, max(0.0, (u - m0) / (m1 - m0)))
-        p = p * p * p * (p * (p * 6 - 15) + 10)
+        p = amount * p * p * p * (p * (p * 6 - 15) + 10)   # amount < 1: a partial zoom (same speed, shorter trip)
         ch = math.exp(math.log(sh) + (math.log(che) - math.log(sh)) * p)
         cy = tp * (sh - ch) / (sh - che) if sh - che > 1 else tp
         keys.append((float(u), float(cy), float(ch)))
@@ -168,15 +168,33 @@ def _lin(keys, i):
     return "(" + "+".join(blocks) + f"+gte(t,{keys[-1][0] - 0.0001:.2f})*{keys[-1][i + 1]:.2f})"
 
 
+def _banner(title, font, hold, fade, work, key):
+    """title = (text, song-time offset of the fragment's first frame): bottom-left banner, fades out at hold+fade."""
+    if not title:
+        return ""
+    os.makedirs(work, exist_ok=True)
+    tf = os.path.join(work, key + ".title.txt")
+    open(tf, "w", encoding="utf-8").write(title[0])
+    esc = lambda p: p.replace("\\", "/").replace(":", r"\:")  # noqa: E731
+    tt = f"(t+{title[1]})"
+    return (f",drawtext=fontfile='{esc(font)}':textfile='{esc(tf)}':fontcolor=white:fontsize=64:box=1:"
+            f"boxcolor=black@0.45:boxborderw=19:x=54:y=h-th-54:enable='lt({tt},{hold + fade})':"
+            f"alpha='if(lt({tt},{hold}),1,max(0,1-({tt}-{hold})/{fade}))'")
+
+
 def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.15, 0.5), work="scratch",
-             fill_sigma=8.0):   # user picked 8 of 4/8/12 at 640x360: only light and colour, no recognisable people
+             fill_sigma=8.0, amount=1.0, title=None, font="C:/Windows/Fonts/segoeuib.ttf", title_hold=4.0,
+             title_fade=0.5):
+    # fill_sigma: user picked 8 of 4/8/12 at 640x360 (only light and colour, no recognisable people).
+    # amount < 1: partial zoom at the same speed (a shot too short for the whole trip still moves).
+    # title: (text, song time of the first frame) -> the song banner, for a shot that opens a song.
     """Render (or reuse) one shot. a/b: clip-local in/out; m0/m1: zoom start/end in shot time.
     Returns (path, hit)."""
-    keys, info = plan(clip, npz, a, b, m0, m1, out_h)
+    keys, info = plan(clip, npz, a, b, m0, m1, out_h, amount=amount)
     spec = {"src": _stat(clip), "pose": _stat(npz), "in": round(a, 3), "out": round(b, 3), "frames": n_frames,
             "zoom": [round(m0, 3), round(m1, 3)], "limits": [HEADROOM, FOOTROOM, BOT_MAX], "real_min": REAL_MIN,
             "ssim_ok": SSIM_OK, "f_eff": info["f_eff"], "stab": list(stab), "shake": [WS.VERSION, WS.SIGMA_S, WS.ROI],
-            "size": [out_w, out_h], "fill_sigma": fill_sigma, "enc": NVENC, "v": VERSION}
+            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "title": title, "enc": NVENC, "v": VERSION}
     key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:20]
     path = os.path.join(CACHE, key + ".mp4")
     if os.path.exists(path) and os.path.exists(path + ".json"):
@@ -199,7 +217,8 @@ def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.
           f"format=yuv420p,gblur=sigma={fill_sigma},scale={out_w}:{out_h}[bg];"   # blur at 640x360
           f"[q]libplacebo=w={out_w}:h={out_h}:crop_w='{CW}':crop_h='{CH}':crop_x='{CX}':crop_y='{CY}':"
           f"pos_w='{PW}':pos_h={out_h}:pos_x='({out_w}-{PW})/2':pos_y=0:fillcolor=black@0:{TONEMAP}:"
-          "format=yuva420p[fg];[bg][fg]overlay=0:0:format=auto,format=yuv420p10le[v]")
+          "format=yuva420p[fg];[bg][fg]overlay=0:0:format=auto" + _banner(title, font, title_hold, title_fade, work, key) +
+          ",format=yuv420p10le[v]")
     os.makedirs(CACHE, exist_ok=True)
     os.makedirs(work, exist_ok=True)
     fc = os.path.join(work, key + ".fc.txt")                              # expressions are long: script file
