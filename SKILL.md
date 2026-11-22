@@ -413,6 +413,92 @@ back to back (a big number 1/2/3 on screen, final song audio at each placement) 
 marking the clip verified. The rule was already in this skill. It just hadn't been re-run for this phone's
 leftover clips: run it on every phone, every time.
 
+### Lyric visuals: concert-style kinetic typography on the fill (reviewed song by song)
+
+The blurred fill beside vertical shots (and, by choice, the edges of a full-frame shot) can carry lyric visuals the
+way a stadium LED wall does. These are key phrases treated as design, appearing exactly when sung. They are NOT
+karaoke.
+
+**Text and timing.**
+- **The words come from the user's lyrics, never from Whisper.** Whisper wrote "young and racist" for "young and
+  restless".
+- **Word times come from forced alignment** (MMS-FA, torchaudio, GPU) of those lyrics against the Demucs vocal stem.
+  The stems are temporary and deleted after.
+- **Whisper's own word times were 0.3-1 s off on live singing.** So was matching vocal attacks one by one.
+- **Align in two steps.** One global forced alignment drifted 4-8 s on repeated hooks: the written lyrics have a
+  fixed number of repeats and the live performance does not. 26 % of lines drifted more than 1 s.
+  1. Run one global MMS-FA pass.
+  2. Correct its drift with Whisper anchors: the lines Whisper heard clearly, shifted by the song's measured
+     Whisper offset. Lines between anchors are interpolated.
+  3. Re-time each line with MMS-FA inside a ±1.5 s window.
+- **Order-only matching of the lyrics against Whisper text failed.** Whisper mishears too much: 50 of 62 lines found
+  no match.
+- **Sparse anchors flag good lines.** In a repeated chorus Whisper heard 4 sentences in 45 s, and its interpolated
+  anchors landed 1.4 s late while the local alignment sat exactly on the 8-bar repeat. Accept a flagged line if it
+  sits on singing at a plausible pace and within ~1.6 s of its anchor. The musical grid (identical repeats every N
+  bars) is the better check for choruses.
+- **Spell numbers out for the aligner** ("sixty-nine"), and merge them back to one written word.
+
+**Where text can go.**
+- Text goes only where the panel keeps ≥ ~450 px per side. Measure the zoom's REAL framing from its plan; a
+  conservative estimate left text visibly off-centre.
+- Lay each phrase out once, at the narrowest width it will have on screen. Re-wrapping while a zoom widens the
+  picture read as the phrase repeating.
+- A phrase ends where the room ends: at a cut to a full-frame camera.
+- Match per-clip metadata by camera AND name. Two phones produced clips with the same name, and one landscape clip
+  borrowed the other phone's "vertical" metadata.
+
+**Two ways to choose the text.** The user found that the automatic mode "works best as long as we have the forced
+alignment".
+- **Automatic:** every reliable line inside the chosen moments, word by word, with the song's title words big. A
+  curated version (2-3 phrases, from a visual-production review) lost to it.
+- **Annotated:** the agent reads and understands the song, then writes an annotation per line: intent, key words,
+  visual concept, keyword-only or full line, panel, group, escalation. A production-designer subagent turns the
+  concepts into exact specs (fonts, sizes relative to the panel, colours, entrances in frames, effects quantised to
+  the beat), and the renderer implements them.
+
+  On a song about a dangerous beautiful man the hook "bello" became a gold stack with a heartbeat. "Peligroso" was
+  red with an RGB split. The plea "¿por qué me haces esto? dímelo" sat on one panel and the "BELLO" answer on the
+  other. On a song asking the wind to tie two lovers and time to stop, the chorus had wind streaks, ribbons weaving
+  around "amárranos", and a tick ring around "tiempo". On "detente" EVERYTHING FREEZES, and the user noticed it
+  ("the words stop vibrating"). Each of the three repeats grows: bigger, the other panel, then both panels.
+
+  For the user, understanding the song is the whole point. Always annotate from its meaning.
+
+**Rules that came out of review.**
+- **Audio-reactive letters, without drawing an equalizer.** Use the doodle-video skill's 14-band spectrum (60 Hz-7 kHz,
+  log spaced, per-band 10-95th percentile normalisation, ×0.8 decay). Each letter takes one band; the band lifts,
+  scales and brightens it.
+- **Treatment by song style.** Harsh songs: words slam in (2-frame 115 % overshoot plus a flash) and cut out. Soft
+  songs: words rise from blur over 0.3 s and dissolve over 0.7 s.
+- **Typography that is too straight reads as stiff.** A "TIEMPO" in a straight sans was "odd". Curved along its
+  ring, with letters riding the audio, it worked.
+- **Plain verse lines must not look typed.** Centre them in balanced rows, feature the longest content word (bigger,
+  another font), and drop each word in on its beat.
+- **Text over a full-frame picture is allowed, never on a face.** Use the clip's pose data for head boxes and pick a
+  face-free height per phrase and panel. A panel with no free height gets no text. Big bold letters on a musician's
+  face "may aggravate" them.
+- **Call and response must not collide.** A plea holds through its answer but yields to the next line on its panel.
+  A minimum hold never runs into the next line on the same panel.
+
+**Engineering.**
+- Text is a cached layer burned into the pieces that touch a moment, so other pieces are never touched. The cache
+  key MUST include a hash of the drawing code and the annotation. Without it, a design fix silently served the old
+  piece.
+- Text frames depend only on their time. Draw each piece in up to 6 parallel chunks (consumer-GPU NVENC session
+  limit), each with its own ffmpeg (frame-accurate seek on a re-encode), and join them with `-c copy`. Frames with
+  nothing on screen are written blank without drawing.
+- Never overwrite a version the user praised while iterating. Archive earlier renders (`old/<name> (<timestamp>)`)
+  and give new variants another name.
+- Cut review samples with the audio re-encoded, and check that both streams start at 0. A sample cut with `-ss`
+  before `-i` and audio `-c copy` kept ~1 s of negative audio pre-roll. Players disagreed, and the user tuned a
+  phantom "+1 s" lyric offset that was really this file bug.
+
+**A "frame jump" on a phone shot can be real camera motion.** The frame timestamps were a perfect 30 fps, but the
+content jumped over 2 frames, which a 2× zoom magnified. The slow-sway stabiliser deliberately leaves fast jitter.
+It can be softened by motion-compensated interpolation of those frames (ffmpeg `minterpolate`, given 4 frames of
+context).
+
 Workflow that worked: 1-minute A/B/C... variants of ONE song, then 5-second clips with one transition
 each (a harsh song with plain cuts, a soft one with dissolves) so every transition type is judged in
 isolation, then the whole show. Keep the preferred phone's priority: the moves are for the fixed cams.
