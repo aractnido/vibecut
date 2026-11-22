@@ -361,6 +361,58 @@ songs and every rule below came from a specific moment they pointed at.
   it. One side-angle phone (behind keyboards and drums, stage lights into the lens, darker) lost 3 of 3 and became
   a last-resort fill only: no zoom, no pose extraction, no re-sync of its unverified clips.
 
+- **The preferred phone has a ceiling.** "Phone first" plus "never cut away from it" produced a whole song as one
+  3-minute phone take (and a 5-minute one). The phone keeps priority, but after 4 phrases (harsh) or 6 phrases
+  (soft) a section start may cut away from it, to the fixed camera that does NOT show the operator filming. The
+  cut-away only needs footage until the next section start; then the phone comes back. A cut-away required to
+  cover the whole rest of the phone's take never found footage, so it never happened.
+
+### Cache: shot bodies and transitions are separate fragments
+
+The first dissolve version cached each shot WITH the extra frames its dissolve needed. Changing the dissolve length
+(beat-based: harsh 0 -> 3 frames per side, soft 10 -> 14) changed every shot's range, so every key changed and the
+whole show re-rendered for more than an hour. The user called it: "body and transitions are separated in the
+cache; transitions are only cached when needed (on miss)".
+
+```
+cut at b, H = fixed margin (24 frames), h = dissolve frames per side (<= H)
+
+A body:      [ a+H_before , b-H )              key: A's source + range       -> never depends on h
+transition:              [ b-H , b+H )         key: A piece, B piece, h, H    -> rendered on a miss only:
+                           A ... [blend 2h] ... B    A over [b-H, b+h), B over [b-h, b+H), xfade on the GPU
+B body:                          [ b+H , c-H )
+song = body + transition + body + ...  joined with concat -c copy (no full-song re-encode)
+```
+
+- **Margin per cut:** min(H, a third of either neighbouring shot), so a short shot keeps a body. A missing handle
+  at a clip's end becomes frozen frames inside the transition. The A/B handle pieces are deleted once their
+  transition exists.
+- **Measured on one song:** first run 14 bodies + 13 transitions; a re-run had everything cached; changing the
+  dissolve 6 -> 10 frames re-rendered only the 13 transitions (about 1.5 s of video each).
+- **Pieces of a moving shot must share the whole shot's plan.** For moves, the keyframes are evaluated on the
+  shot's own clock and shifted per piece. For the vertical zoom, detail and the shake path are measured over the
+  whole shot (`portrait_zoom.fragment(ref=...)`). Measuring per piece crashed on a 0.3 s handle (no frames to
+  sample), and would have framed and stabilised the body and its transition differently: a visible jump.
+- **`xfade_vulkan` gotcha:** it passes untouched frames straight through, still in their own input's upload pool.
+  With more inputs or longer dissolves, `hwdownload` failed with "Input frame is not in the configured hwframe
+  context". A `scale_vulkan=w=iw:h=ih` before the download re-renders every frame into one pool.
+- **Whole-song GPU assembly was CPU-bound.** NVENC sat at 5-24 % while one ffmpeg burned CPU, because every frame
+  went CUDA decode -> system RAM -> Vulkan -> RAM -> NVENC. Re-encoding only the transitions removes that.
+- **Still to do:** skip a song whose plan (shots + dissolve) matches its existing sidecar; and find the ~3.5 min
+  per-song planning overhead (tempo and stage-motion recomputed every run) before calling the assembly
+  "seconds".
+
+### Unverified phone clips: re-run them with the trusted-clock rule, then let the user pick
+
+Five clips of the preferred phone stayed unverified, one of them the user's favourite footage of a song ("really
+fun videos ... discarded"). The timeline had placed each by an audio match 4-24 s away from what its clock
+predicted ("far_from_clock"): a repeat of the same phrase. Searching ±1 s around clock + the phone's error
+MEASURED on its verified clips of that song (here -0.1 to -0.8 s) gave one dominant peak per clip (correlation
+0.53-0.80 against 0.29-0.43 for the runner-up). Show the user a short video per clip with the top 3 placements
+back to back (a big number 1/2/3 on screen, final song audio at each placement) and let them pick by ear before
+marking the clip verified. The rule was already in this skill. It just hadn't been re-run for this phone's
+leftover clips: run it on every phone, every time.
+
 Workflow that worked: 1-minute A/B/C... variants of ONE song, then 5-second clips with one transition
 each (a harsh song with plain cuts, a soft one with dissolves) so every transition type is judged in
 isolation, then the whole show. Keep the preferred phone's priority: the moves are for the fixed cams.
