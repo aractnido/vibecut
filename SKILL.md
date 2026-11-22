@@ -31,8 +31,8 @@ Every show has a different mix of cameras and the user has opinions about them. 
    the review folder (render there first) and the publish folder (only on the user's go; keep 4K and
    2K side by side as e.g. `MultiCam.4K.AI` / `MultiCam.2K.AI` rather than overwriting).
    - **The layout one user settled on, with plain names:**
-     - `Video/` holds the version without lyrics;
-     - `Video.WithLyrics/` holds the version with lyric visuals;
+     - `Videos/` holds the version without lyrics;
+     - `Videos.WithLyrics/` holds the version with lyric visuals;
      - `Audio/` holds the per-song FLACs;
      - each video folder has the songs, `00-Full Show.mp4` and `Metadata/`;
      - `Metadata/` holds the render sidecars, `STATS.html`/`STATS.md`/`stats.csv` and `youtube.txt`.
