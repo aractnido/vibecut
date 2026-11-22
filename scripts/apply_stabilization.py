@@ -47,8 +47,13 @@ def tmp_trf_path(out_dir):
 
 
 def stabilize(src, out_path, tmp_trf, zoom=0, smoothing=15):
+    # Light-proof motion detection: vidstabdetect reads a stage-light change (purple -> green, a strobe, a blinder
+    # facing the camera) as camera motion, and the transform then "corrects" a move that never happened -- a
+    # 17-35 px jump in one frame. Detect on a grey, histogram-equalised copy (motion survives, the light change
+    # mostly doesn't), and transform the real frames. Measured on 10 s of a concert phone clip: 8 jumps up to
+    # 34.6 px with plain detection, 0 with this (max 4.9 px, the same as the phone's own footage).
     r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", src,
-                         "-vf", f"vidstabdetect=shakiness=8:accuracy=15:result={quote_val(tmp_trf)}",
+                         "-vf", f"format=gray,histeq=strength=0.6,vidstabdetect=shakiness=8:accuracy=15:result={quote_val(tmp_trf)}",
                          "-f", "null", "-"])
     if r.returncode != 0:
         return False

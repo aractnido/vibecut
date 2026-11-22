@@ -494,10 +494,125 @@ alignment".
   before `-i` and audio `-c copy` kept ~1 s of negative audio pre-roll. Players disagreed, and the user tuned a
   phantom "+1 s" lyric offset that was really this file bug.
 
-**A "frame jump" on a phone shot can be real camera motion.** The frame timestamps were a perfect 30 fps, but the
-content jumped over 2 frames, which a 2× zoom magnified. The slow-sway stabiliser deliberately leaves fast jitter.
-It can be softened by motion-compensated interpolation of those frames (ffmpeg `minterpolate`, given 4 frames of
-context).
+**A "frame jump" on a phone shot was the stabiliser, fooled by stage lights.** At first it looked like real camera
+motion: the frame timestamps were a perfect 30 fps, and a 2× zoom magnified the jump. Measuring frame-to-frame
+motion in three places settled it:
+
+| Source | Motion per frame |
+|---|---|
+| Phone original | 1-2 px, smooth |
+| Phone stabiliser output | a 17 px jump on the exact frame the stage light switched from purple to green |
+| Final video | the same jump |
+
+See *Blinking lights fool motion estimation* below for the fix. Motion-compensated interpolation (ffmpeg
+`minterpolate`, given 4 frames of context) can soften a single bad frame, but fix the cause first.
+
+### Second big review round: notes, then groups, then root causes, then systematic fixes
+
+The user watched every song and dictated short notes ("song, second, what"). The process that worked:
+1. **Collect.** Log every note verbatim in a FEEDBACK file and fix nothing yet. Notes can be scratched later (one
+   was: "she didn't record at that time").
+2. **Group.** Sort the notes by kind: lyrics with meaning, text room, timing, glyphs, beat motion, the director,
+   missing text.
+3. **Root cause.** Find each group's cause in data or code, measured and not guessed. Two first guesses were wrong:
+   - A cut away from a great phone shot was not the phone ceiling: the phone covered only the start of a long
+     fixed-cam take.
+   - A song with "no text" was not a render bug: its phone shot had turned out to be landscape after a metadata
+     fix, so the hand-picked lyric window was stale.
+4. **Fix systematically.** Fix in code so every song gets it, then re-render only the affected pieces (the
+   fragment cache does that).
+
+**Two versions of every song.** Render one without lyrics, to judge cuts, transitions, zoom and camera work. Render
+one with lyrics, where every song gets the meaningful words, "without overdoing it, but every song gets
+something". Use the same cache; the lyrics version only re-renders the pieces that carry text, plus any shot the
+lyric-aware director changes. Put them in two folders.
+
+**Edit statistics as a page.** `scripts/edit_stats_report.py <folder> [<previous folder>] [--annotations <dir>]
+[--title "..."]` writes `STATS.md`, `stats.csv` and `STATS.html` next to the videos. The page has:
+- stat tiles;
+- a per-song stacked bar of camera time, with hover values;
+- a sortable per-song table: cuts per minute, shot median, min and max and which camera held the longest take,
+  cuts on a phrase line, verticals and zooms, short A-B-A ping-pongs, dissolve length, the director's pacing
+  counters, and lyric lines chosen against those with a panel;
+- a comparison line against the previous round.
+
+The text version, `scripts/edit_stats.py`, is still there for the console.
+
+### Lyrics for every song: researcher, then lyricist, then designer agents (`agents/`)
+
+Three subagents, each with one job; the definitions are in this repo's `agents/` folder:
+- **`song-researcher`**: who wrote the song, when, why it matters, who sings it and how. Then the subtext: the
+  metaphors, who speaks to whom, the turn in the last chorus, call and response. It writes a reading; it doesn't
+  design. Its quality bar is a reading the user loved. Run one per 4-5 songs in parallel.
+- **`lyricist`**: which sung words matter, line by line. A hero word plus at most one or two supporting words; the
+  full line only for the hook, a dialogue line or the song's turn. Repeats get fewer words. Leave silence. It
+  never rephrases: only sung words, in order, because their times come from the alignment. It never drops a
+  negation.
+- **`kinetic-typography`**: turns the reading and the annotation into an exact render spec (Wp-relative sizes,
+  hex colours, beat-quantised effects).
+
+The chain is:
+1. The researcher writes the reading; the agent (you) finalises it.
+2. The lyricist chooses the words.
+3. You write the annotation (`show`, `words`, `key`, optional `panel` L/R, optional `at`).
+4. The designer writes the spec.
+5. You implement it, render and check.
+
+Pass the user's own notes to the agents as requirements: "X on the left, Y on the right", "this word is sung
+long". The researchers also caught facts that change the visuals:
+- A lyric the user misremembered (a name).
+- A line that contains a slur, which must never be shown.
+- A song whose own artist stopped performing it over gun violence: no gun imagery.
+
+**Copyright rule for agents.** One research batch was blocked mid-output for reproducing lyrics. Ask agents to
+cite only fragments of at most 5 words plus the line time, and to put only the first 2-5 words of a line in the
+annotation's `text` field. The renderer matches lines by fragment.
+
+**Renderer rules added in this round:**
+- **Zoom in and keep the text.** Zooming in is preferred, but text then shrinks with the panel instead of
+  disappearing. The panel floor is 160 px; under 300 px only the hero word(s) show. "Don't say 'I didn't write
+  anything because there was no space after the zoom'."
+- **A negation is never dropped,** even in a one-word panel. "take" alone flips "not gonna take it".
+- **Collapsed alignment.** When the local alignment put several different lines on the same start (one line
+  showed before it was sung), use the line's Whisper-anchored time. The annotation can also pin a time with
+  `at`, for shouted call-and-response hooks the aligner misplaced, or a long held word.
+- **Held words move with the beat.** A word sung longer than a beat pulses on each beat (+12 %) and vibrates:
+  "fire awaaaay", "take".
+- **The director knows the lyrics** (lyrics version only):
+  - never cut away from the phone while a chosen line is being sung;
+  - in songs with no phone footage, a fixed camera may turn into a vertical slice during phrases that carry chosen
+    lines, so the words get side panels (up to 3 extra verticals per song).
+
+**Director rule from this round, for both versions: the preferred phone wins the START of a fixed-cam take.** The
+"phone first" rule only replaced fixed-cam takes the phone covered completely. A great phone shot lost a 20 s take
+it covered for its first 8 s.
+
+Now the phone takes the start, under these limits:
+- whole bars;
+- at least one phrase;
+- the fixed camera keeps at least one minimum take;
+- a phone take that then runs straight on is joined.
+
+The preferred phone's ceiling went up from 4/6 to 5/7 phrases (harsh/soft).
+
+### Blinking lights fool motion estimation
+
+Bright stage lights facing the camera (blinders, strobes, colour washes) look like camera motion to every motion
+estimator: vidstab, feature matching and phase correlation alike. A solo with 83 light-flash frames in 10 s gave:
+
+| Stabilisation | Jumps over 12 px | Largest jump |
+|---|---|---|
+| Plain phone stabiliser | 20 | 54 px |
+| Light-proof phone stabiliser (detection on `format=gray,histeq`) | 10 | 24 px |
+| Phone original, no stabilisation | 12 | 24 px |
+
+Rules:
+- **Detect phone motion on a light-normalised copy.** `apply_stabilization.py` now runs vidstabdetect on
+  `format=gray,histeq=strength=0.6` and transforms the real frames.
+- **Treat dense light flashes as a "don't stabilise here" hint.** A frame-to-frame brightness step over 6/255, or a
+  colour step over 10/255 at low resolution, marks a flash. Where they are dense, skip the zoom window's own
+  stabilisation too. The user picked "light-proof phone stabiliser, no zoom stabilisation" by eye on a
+  side-by-side of the three versions, numbered 1/2/3.
 
 Workflow that worked: 1-minute A/B/C... variants of ONE song, then 5-second clips with one transition
 each (a harsh song with plain cuts, a soft one with dissolves) so every transition type is judged in
