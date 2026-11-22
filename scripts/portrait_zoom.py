@@ -138,10 +138,10 @@ def effective_detail(clip, a, b, rows=(0.42, 0.86)):
     return f_eff
 
 
-def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0):
+def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0, ref=None):
     """Keyframes (shot time u, crop_y, crop_h) every `step` s + the parameters that decided them."""
     sw, sh = WS._dims(clip)
-    f_eff = effective_detail(clip, a, b)
+    f_eff = effective_detail(clip, *(ref or (a, b)))   # whole shot: every piece of it frames identically
     min_h = out_h * REAL_MIN / f_eff
     t, top, bot = band_limits(npz)
     keys = []
@@ -183,18 +183,21 @@ def _banner(title, font, hold, fade, work, key):
 
 
 def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.15, 0.5), work="scratch",
-             fill_sigma=8.0, amount=1.0, title=None, font="C:/Windows/Fonts/segoeuib.ttf", title_hold=4.0,
+             fill_sigma=8.0, amount=1.0, ref=None, title=None, font="C:/Windows/Fonts/segoeuib.ttf", title_hold=4.0,
              title_fade=0.5):
     # fill_sigma: user picked 8 of 4/8/12 at 640x360 (only light and colour, no recognisable people).
     # amount < 1: partial zoom at the same speed (a shot too short for the whole trip still moves).
+    # ref: (a, b) clip-local range of the WHOLE shot, when this fragment is only a piece of it (a body or a
+    #      transition handle): detail and shake are measured on the whole shot, so every piece frames and
+    #      stabilises identically and the pieces join without a jump.
     # title: (text, song time of the first frame) -> the song banner, for a shot that opens a song.
     """Render (or reuse) one shot. a/b: clip-local in/out; m0/m1: zoom start/end in shot time.
     Returns (path, hit)."""
-    keys, info = plan(clip, npz, a, b, m0, m1, out_h, amount=amount)
+    keys, info = plan(clip, npz, a, b, m0, m1, out_h, amount=amount, ref=ref)
     spec = {"src": _stat(clip), "pose": _stat(npz), "in": round(a, 3), "out": round(b, 3), "frames": n_frames,
             "zoom": [round(m0, 3), round(m1, 3)], "limits": [HEADROOM, FOOTROOM, BOT_MAX], "real_min": REAL_MIN,
             "ssim_ok": SSIM_OK, "f_eff": info["f_eff"], "stab": list(stab), "shake": [WS.VERSION, WS.SIGMA_S, WS.ROI],
-            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "title": title, "enc": NVENC, "v": VERSION}
+            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "ref": [round(x, 3) for x in ref] if ref else None, "title": title, "enc": NVENC, "v": VERSION}
     key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:20]
     path = os.path.join(CACHE, key + ".mp4")
     if os.path.exists(path) and os.path.exists(path + ".json"):
@@ -203,7 +206,11 @@ def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.
     CY, CH = _lin(keys, 0), _lin(keys, 1)
     CW, CX = f"{sw}", "0"
     if stab:
-        c = WS.correction(WS.shake(clip, a, b), slow_s=stab[0], gain=stab[1])
+        ra, rb = ref or (a, b)                          # shake path of the whole shot, sliced to this piece
+        c = WS.correction(WS.shake(clip, ra, rb), slow_s=stab[0], gain=stab[1])
+        i0 = int(round((a - ra) * 30))
+        idx = np.clip(np.arange(i0, i0 + n_frames), 0, len(c["t"]) - 1)
+        c = {"t": np.arange(n_frames) / 30.0, "dx": c["dx"][idx], "dy": c["dy"][idx]}
         mx = max(1.0, float(np.ceil(np.percentile(np.abs(c["dx"]), 99.5))))   # narrow the width by the sway
         CW, CX = f"{sw - 2 * mx:.0f}", f"({mx:.0f}+{WS.table_expr(c['t'], np.clip(c['dx'], -mx, mx))})"
         CY = f"max(0,min({sh}-{CH},{CY}+{WS.table_expr(c['t'], c['dy'])}))"
