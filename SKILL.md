@@ -34,7 +34,7 @@ Every show has a different mix of cameras and the user has opinions about them. 
      - `Video/` holds the version without lyrics;
      - `Video.WithLyrics/` holds the version with lyric visuals;
      - `Audio/` holds the per-song FLACs;
-     - each video folder has the songs, `00-Full-Show-AllSongs.mp4` and `Metadata/`;
+     - each video folder has the songs, `00-Full Show.mp4` and `Metadata/`;
      - `Metadata/` holds the render sidecars, `STATS.html`/`STATS.md`/`stats.csv` and `youtube.txt`.
    - **Publish only a finished version.** A review folder being re-rendered holds a mix of old and new songs.
      Wait for the render, clean its `old/` archive, regenerate the stats, build the full show from that folder,
