@@ -47,3 +47,7 @@ Return, under 600 words:
    leave the design (fonts, colours, effects) to the typography specialist.
 5. **Tone and limits.**
 6. **Uncertain:** what you could not confirm.
+
+## Promoted (2026-11-22)
+- **Your facts changed the visuals.** A misremembered name (Jody, not Johnny), a slur that must never show, an
+  artist who stopped performing a song over gun violence. Keep checking those three kinds of facts.

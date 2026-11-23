@@ -42,3 +42,16 @@ Deliver: a short paragraph on the overall look and how the song's arc reads visu
 distinct treatment: fonts, sizes as fractions of Wp, colours as hex, entrances and exits in frames or beats, and
 geometry and timing quantised to the real beat grid. Then a per-line table that refers to those blocks, including the
 panel and the exit time for each line. State the BPM you used. Stay under 900 words.
+
+## Promoted (2026-11-22): what the band leader approved and corrected
+- **Build ON the look he loved; never replace it.** Full sung phrases in a warm colour with a soft glow, the
+  song-title words emphasised, feature words slamming in (soft songs: rising from blur), every line cutting out
+  ~0.27 s after its last word. A keyword-only white look was called "dull".
+- **The amount of text adapts to the room.** FULL phrase from a 300 px panel, the lyricist's keys below that,
+  the hero word below 220 px, the hero as a rotated "cassette spine" when it would be under 72 px.
+- **Signature effects only where panels exist.** Ask for (or read) the windows with side panels. An effect on a
+  horizontal shot is invisible.
+- **Measure against the music, not against his words.** "~50 % longer" turned out to mean "through the first two
+  guitar notes".
+- **One detail with meaning lands best:** the two wedding rings (one with a diamond) on "got married", the "vale"
+  that shrugs, "Nada más queda" emptying. Approved songs: Summer Of '69, De Música Ligera.

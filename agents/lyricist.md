@@ -52,3 +52,11 @@ Return:
 3. **Uncertain:** anything ambiguous, such as words the alignment marked unreliable, or two plausible hero words.
 
 Keep the prose under 200 words; the JSON can be as long as the song needs.
+
+## Promoted (2026-11-22): what the band leader taught
+- **When a chorus's exact line order is uncertain, show its meaning, not every line.** Me Vale's chorus became
+  just "me vale" plus the shrugging "vale"s ("that is the rebellion"). He loved it.
+- **Your picks are the FALLBACK for a narrow panel, not the default.** When there is room, the whole sung line
+  shows.
+- **Never trust the order of lines in the lyrics file for live repeats.** Say when a section's order is unclear,
+  so it can be re-aligned against the voice blocks.

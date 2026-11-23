@@ -633,6 +633,52 @@ Now the phone takes the start, under these limits:
 
 The preferred phone's ceiling went up from 4/6 to 5/7 phrases (harsh/soft).
 
+### Rolling the designed lyrics out safely, and what each pilot taught
+**Roll out in growing batches.** Design one song and get it approved, then 2 more, then 3. Each pilot surfaced a
+general bug before it could spread to 25 songs.
+
+**One shared look, one small module per song.** The approved song's code became a shared base: phrase layout, the
+warm glow, title-word emphasis, word entrances and exits, and the room-adaptive tiers. Each song then adds only its
+signature details in a module of its own, drawn from the designer agent's spec. Include the base and every module
+in the render cache key, or a change to the base never reaches the cached pieces.
+
+**Re-aligning collapsed lines: jointly, then validated.** A whole-song alignment can collapse repeated lines, so
+words go missing from the screen even though the panel has room. The first repair aligned each line alone inside
+one voice block and kept the best score. It was wrong twice:
+- one voice block often holds two or three lines;
+- forced alignment always places a line somewhere, and scores of different lines can't be compared.
+
+A line came out 3.6 s late, and the user caught it. Now:
+- the lines of a section are aligned together, in sung order, with a wildcard token between lines for breaths;
+- a result is accepted only when every word sits on detected singing (±0.3 s), there is no gap over 1.5 s inside
+  a line, lines are ordered without overlapping, and the pace is plausible (0.6-7 words/s);
+- a rejection prints where every word landed, so the cause is visible;
+- verify with timestamped frames before reporting.
+
+**When the order of a repeated chorus can't be confirmed, show its meaning instead of every line.** One chorus
+repeats the same phrase in an order the lyrics file didn't match, and nothing validated. Its meaning is the
+repeated shrug of the title phrase, so the screen showed only that phrase, stacking up on its sung onsets. The
+user loved it. A block with no evidence of singing stays empty.
+
+**Cuts and text: think in visible text blocks, not single lines.** Moving a cut out of one line put it in the
+middle of the line before it, because the two overlapped on opposite panels. The rule now:
+- merge every line's on-screen span (entrance to exit, any panel) into continuous text blocks;
+- move a cut that falls inside a block to the block's nearest edge, toward the shot that has room for text first,
+  within the clips' footage and keeping at least a bar per shot;
+- repeat until stable;
+- every render prints "cuts inside text", which must be empty.
+
+**Two room bugs the pilots found:**
+- A line starting a few frames before a shot with side panels measured zero room and was dropped. Measure the
+  room from the first frame that has panels.
+- The "no cut-away while a line is sung" rule kept a horizontal phone clip that has no panels. It then cancelled
+  the fixed camera's vertical slice, which did have room. Apply the rule only to vertical phone clips.
+
+**Publishing a mixed set.** The lyrics folder can mix approved designed songs with songs still on the previous
+version. Never publish an undesigned look the user called dull. Rebuild the full show from the exact set, check
+that video and audio lengths match, compare each copy's size with its source, and give the upload text a title
+that says which version it is (for example "| With Lyrics" or "| Full Concert").
+
 ### Blinking lights fool motion estimation
 
 Bright stage lights facing the camera (blinders, strobes, colour washes) look like camera motion to every motion
