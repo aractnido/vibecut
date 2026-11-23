@@ -597,6 +597,30 @@ annotation's `text` field. The renderer matches lines by fragment.
   - in songs with no phone footage, a fixed camera may turn into a vertical slice during phrases that carry chosen
     lines, so the words get side panels (up to 3 extra verticals per song).
 
+**Corrections from the next review: a fallback is not a new default.** The user's note had been "while the zoom
+leaves no room, fall back to fewer words". It was over-applied in two ways, and the result was called "dull":
+- **The lyricist's keywords became the default for every line.** A wide panel showed "guys" instead of "Me and some
+  guys", and loose keywords kept stray punctuation ("vale piensen,", "quit,").
+- **Every song lost the look the user loved.** It moved from the warm automatic look (cream text, soft glow,
+  title words in orange, full phrases that vanish quickly) to an undesigned generic one.
+
+Rules now:
+- **The word count adapts to the room, line by line:**
+  - a wide panel (450 px and up) shows the whole sung line;
+  - a medium panel (300-450 px) shows the lyricist's picked words;
+  - a narrow panel shows the hero word, and a negation is always kept.
+
+  A line the user split across panels, or pinned to one, stays exactly as picked.
+- **Never replace a look the user praised in order to fix something else.** Keep it as the base, and send any new
+  per-song design to the designer agent, building on that look.
+- **A line leaves one beat after its last word is sung** (at least 1.5 s on screen). Holding until the next line
+  on the same panel left words "on forever".
+- **The cut follows the text.** No cut, from any rule, may fall inside a shown line. It moves to just after the
+  line (the outgoing shot runs on, if its clip has footage), or else to just before it. Each shot keeps at least
+  half a phrase. A cut in the middle of a phrase read as "split brain".
+- **The user's examples are illustrations, not specifications.** ("Jimmy / quit" showed the idea of fewer words; it
+  was not a required layout.)
+
 **Director rule from this round, for both versions: the preferred phone wins the START of a fixed-cam take.** The
 "phone first" rule only replaced fixed-cam takes the phone covered completely. A great phone shot lost a 20 s take
 it covered for its first 8 s.
