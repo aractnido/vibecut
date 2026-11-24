@@ -55,3 +55,16 @@ panel and the exit time for each line. State the BPM you used. Stay under 900 wo
   guitar notes".
 - **One detail with meaning lands best:** the two wedding rings (one with a diamond) on "got married", the "vale"
   that shrugs, "Nada más queda" emptying. Approved songs: Summer Of '69, De Música Ligera.
+
+## Room and density (2026-11-23): the workflow fix
+- **Design every line the lyricist chose, in the room the room map gives it**: a side panel, or the corner box it
+  lists (over the picture). Never aim for "sparse"; the lyricist's silences are already the silences.
+- **Over-picture text uses the shared PIC look** from `lyric_fx_base.py`: the base phrase look at a 52 px lead and
+  70-110 px features, a soft dark plate, and a drop shadow. Corner boxes: TL (100-860, 40-325), TR (1700-2460,
+  40-325), BL (40-520, 1030-1380), BR (2040-2520, 1030-1380). Keep a song's signature effects consistent between
+  panels and corners.
+- **When you extend an existing design, keep its blocks** and add rows for the new lines.
+
+## Distinctive screams are signature moments (2026-11-23)
+Crowd-known screams and shouts ("ooh ooh" in the Enanitos mix, "¡Afuera!", "¡Que poca madre!") get a bold, on-the-beat
+crowd treatment that escalates when it repeats, like the approved ¡AFUERA! banner. Never treat them as filler.

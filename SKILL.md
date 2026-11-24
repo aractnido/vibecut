@@ -679,6 +679,71 @@ version. Never publish an undesigned look the user called dull. Rebuild the full
 that video and audio lengths match, compare each copy's size with its source, and give the upload text a title
 that says which version it is (for example "| With Lyrics" or "| Full Concert").
 
+### The room-map workflow: every sung line with room gets text (a production line of agents)
+The designed rollout still left whole verses empty. One song lost 14 lines, and the reason was structural: "room"
+had only ever meant side panels, so lines sung over horizontal shots never reached the lyricist, and the lyricist
+left silences by default. The band leader: "this song could be almost fully written, so many good stuff".
+
+**The chain now, per song:**
+1. **Room map before any agent runs.** For every sung line: "panel" (side-panel width over the line), "pic" (corner
+   boxes over the picture with no head in them for the whole line), or "none". Measure it on the rendered no-lyrics
+   video at 2 fps: panel width only inside zoom/vertical shots, heads from a pose model on the same frames.
+2. **Lyricist with the room map.** Every sung line with room shows something. Silence needs a reason: repeat,
+   echo, filler, unreliable, slur. Corner lines carry at most 3 words; panel lines show the whole line when it fits.
+3. **Timing, validated.** Collapsed or overlapping sections are re-aligned jointly (forced alignment) and only
+   validated results are used. Two validator additions:
+   - singing of 3 s or more inside the window that no line covers means a line is missing from the text (a repeat
+     of a chant was left out and the old validator passed);
+   - a held one- or two-word line may be slow.
+
+   Speech-to-text is for discovery only (what is sung, its order, shouts missing from the lyrics file). No
+   speech-to-text timestamp is ever drawn.
+4. **Designer.** Every chosen line, in its room. Corner text uses one shared tier in the base look: frame-pixel
+   sizes, a soft dark plate and a drop shadow. Never aim for "sparse".
+5. **Implement, smoke-test, gap-check.** Draw one frame at each line's start, middle and end with the song's
+   module before rendering (a missing import cost a full render). Then check that every chosen line has an event.
+6. **Render, then QA on real frames, then publish.**
+
+**A QA agent, taught with every past review note** (`agents/lyric-qa.md`). It reviews each render on timestamped
+frames and returns PASS or issues with timestamp, likely root cause and who fixes it. It found things the automated
+checks passed:
+- text on screen through a 26-frame crossfade (the cut check tested only the cut instant);
+- a corner line over the stage sign, a monitor, an exit sign (the room map only knew faces);
+- a praised panel line that lost its panel because a new corner line merged into its text block and pushed the cut;
+- signature effects too small to read on a phone.
+
+**Director rules that came out of QA:**
+- Text blocks for cut placement are padded by half the song's dissolve, not a fixed 0.1 s.
+- Corner text and panel text merge into one block only when they truly overlap. A cut between them is where the
+  room changes, so it is where the shot should change.
+- A cut that still can't leave the text becomes a plain cut: no crossfade under words.
+
+**One producer agent per song, for scale.** Passing every specialist's report through the orchestrator does not
+scale to a whole show. A producer agent plays lyricist, timing and designer for one song from a shared brief,
+writes everything to disk (picks, validated fixes, spec, module, line table) and passes the smoke test and gap
+check. The orchestrator keeps what must be serial or independent: rendering (one at a time), QA and publishing.
+- **Copyright.** Agents were stopped by the content filter for typing lyrics. Picks use word indexes into the
+  lyrics file, files are built by scripts that read it, and no message carries more than 5 lyric words.
+- **GPU contention is real.** Six producers running speech-to-text, room maps and previews beside a render
+  saturated the GPU: encoder and decoder errors, dead background jobs, agents waiting for hours on files that never
+  came. Cap the concurrent GPU jobs, use one render queue with retry, and wake agents whose waiters died.
+- **A fix found by QA goes back to the song's producer**, who knows its module.
+
+**Distinctive screams and crowd shouts are signature moments, never filler.** A shout the audience knows may be in
+no lyrics file. Find it in the audio (speech-to-text on the stem and the full mix), confirm it with a validated
+forced alignment on a tight window, and give it a bold crowd treatment.
+
+**Registered overlays.** Effects tied to a performer's body (doodle bursts on claps, tracked with pose and beat)
+are saved as a transparent layer plus a registration file per song, and re-applied after every render of that song,
+so a re-render never loses them. Lessons from the clap overlay:
+- a clap counts when the beat, the clap sound and raised arms agree;
+- when the pose is unsure, use the nearest sure position;
+- a burst always sits above the head;
+- short pose dropouts under stage light are bridged.
+
+**Extending an approved song.** When the leader asks for corner text on a song he already approved, the approved
+lines must stay pixel-identical. Add rows; never restyle.
+
 ### Blinking lights fool motion estimation
 
 Bright stage lights facing the camera (blinders, strobes, colour washes) look like camera motion to every motion
