@@ -1,11 +1,11 @@
-# vivecut 🎬🎥
+# vibecut 🎬🎥
 
 Automatically direct a multicam edit of your live show, instead of scrubbing through five angles
 of a two-hour concert by hand.
 
 You've got a camcorder running the whole set, plus a few phones and action cams scattered around
 pointed at the stage. Nobody's clocks agree, nobody's framing is consistent, and nobody filmed
-the whole show on one camera. 🎸 `vivecut` takes that whole pile of footage and builds a single
+the whole show on one camera. 🎸 `vibecut` takes that whole pile of footage and builds a single
 continuous multicam edit: it figures out where every clip really falls on a shared timeline, then
 decides shot-by-shot which camera is actually the most interesting one to be on right now — who's
 moving, who's in frame, who's about to do something — and cuts to it. On the beat, not on a
