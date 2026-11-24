@@ -18,6 +18,15 @@ Never write song lyrics into your messages or reports: at most 5 words of any ly
 into the line's word list (e.g. "words": [0, 2], "key": [2]) or "ALL", and build files with small Python scripts that
 read the words from metadata/lyrics/NN.json, instead of typing the lyrics yourself.
 
+## 0b. Identity research and the video's palette (before designing)
+- Identity research: read agents/song-researcher.md ("Identity and meta-meaning") and
+  research THIS song's artist (web search): visual identity of the era, the genre's visual codes, the song's place in
+  the band's story, meta-meaning, what the audience does, and a "do not" list. Append it to
+  metadata/song_research/NN.md under "## Identity" with sources and the hand-off lines.
+- Palette map: run `scripts\palette_map.py NN` (writes metadata/palette/NN.json) and read it.
+- The designer step then follows kinetic-typography.md's "band's identity and the video's palette" section: shapes
+  from the band, colours against the video; evoke, never copy a logo.
+
 ## 1. Lyricist (read agents/lyricist.md and follow it, plus these rules)
 - Every sung line with room shows something; "none" only with why = repeat / echo / filler / unreliable / slur.
 - Panel lines: the whole line shows when it fits; your keys are the fallback. Pic (corner) lines: at most 3 words.

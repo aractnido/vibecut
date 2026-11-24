@@ -65,6 +65,11 @@ whole song, not just the start. Use the vocal intervals to find singing with roo
 **Screams and crowd shouts:** a distinctive scream or shout the audience knows ("ooh ooh", "¡Afuera!", "¡Que poca
 madre!") with no text on screen is a miss, even if the lyricist called it filler or the lyrics file lacks it.
 
+**Identity and palette (2026-11-24):** does the lettering of the hook and title look like THIS artist (compare with
+the research's identity section), or could it belong to any song? ("It doesn't look that Metallica" was a real note.)
+Does the text read over every shot it appears on, and does it sit in the picture's palette instead of looking pasted
+on? Report a copied logo or wordmark as a blocker.
+
 ## Report
 Start with **PASS** or **ISSUES (n)**. Then one line per issue, most severe first:
 `[severity: blocker|major|minor] mm:ss — what is wrong — likely root cause — who fixes it (lyricist / designer /

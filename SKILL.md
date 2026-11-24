@@ -744,6 +744,26 @@ so a re-render never loses them. Lessons from the clap overlay:
 **Extending an approved song.** When the leader asks for corner text on a song he already approved, the approved
 lines must stay pixel-identical. Add rows; never restyle.
 
+### The artist's identity and the video's palette (a song loved, "but it doesn't look like the band")
+A heavy-metal cover came out with effects the band leader loved and lettering that could have belonged to any song.
+Tracing it through the chain showed a gap between two roles:
+- the researcher had one line on the artist and nothing visual (it had been run for several songs at once, and
+  nobody asked what the band LOOKS like);
+- the designer treated the shared base look as the whole look and never chose a font.
+
+Now:
+- **Research, one song per run,** adds: the artist's visual identity in that era (logo lettering, cover art,
+  colours), the genre's visual codes, the song's place in the band's story, its meta-meaning (slogans, rituals,
+  memes), what the audience does, and a "do not" list (logos to evoke but never copy, imagery the artist rejects).
+  It ends with hand-off lines for the designer, the lyricist and QA.
+- **A palette map of the video** (per shot: dominant colours, brightness, how bright and busy each corner is),
+  measured before designing, like the room map.
+- **The designer takes shapes from the band and colours against the video:** the hook and title words carry a nod
+  to the artist's lettering; one main palette per song is chosen for contrast over all its shots. The shared base
+  still gives layout, tiers, timing and legibility.
+- **QA asks:** does the hook's lettering look like this artist, and does the text sit in the picture's palette?
+- Songs already approved keep their look unless the band leader asks.
+
 ### Blinking lights fool motion estimation
 
 Bright stage lights facing the camera (blinders, strobes, colour washes) look like camera motion to every motion
