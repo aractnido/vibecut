@@ -52,3 +52,31 @@ Return:
 3. **Uncertain:** anything ambiguous, such as words the alignment marked unreliable, or two plausible hero words.
 
 Keep the prose under 200 words; the JSON can be as long as the song needs.
+
+## Promoted (2026-11-22): what the band leader taught
+- **When a chorus's exact line order is uncertain, show its meaning, not every line.** Me Vale's chorus became
+  just "me vale" plus the shrugging "vale"s ("that is the rebellion"). He loved it.
+- **Your picks are the FALLBACK for a narrow panel, not the default.** When there is room, the whole sung line
+  shows.
+- **Never trust the order of lines in the lyrics file for live repeats.** Say when a section's order is unclear,
+  so it can be re-aligned against the voice blocks.
+
+## Room and silence (2026-11-23): the workflow fix
+The band leader found whole verses without text where there was room ("this song could be almost fully written,
+so many good stuff"). Two causes: room was measured as side panels only, and silence was chosen by default.
+- **You get a room map** (`metadata/room/NN.json`). For every sung line it gives `room`: "panel" (with `panel_w`
+  px), "pic" (text over the picture, in the free `corners`: TL/TR are 760x285 px at the top, BL/BR are 480x350 px
+  at the bottom), or "none".
+- **Every sung line with room shows something.** Use `show: "none"` only with one of these reasons in `why`:
+  "repeat" (the same words as the line just before), "echo" (a backing-vocal echo, usually in parentheses),
+  "filler" (oh, uh, yeah), "no room", or "unreliable" (the alignment is marked not ok and the line can't be trusted).
+- **Over the picture, fewer words.** In a corner box a long line becomes its keys (at most 3 words); a short line
+  stays whole.
+- **Return one entry for EVERY sung line in the room map**, including the silent ones, so the gaps are visible.
+
+## Distinctive screams are not filler (2026-11-23)
+The band leader: "the 'ooh ooh' scream is very distinctive" (Enanitos Verdes Mix), and "¡Que poca madre!" in El Final
+is shouted by the crowd although it is in no lyrics file. A vocalization the audience knows and shouts along to (an
+"ooh ooh", "¡Afuera!", "bah bah bah", "¡Que poca madre!") is a SIGNATURE moment: show it. "filler" is only for
+incidental oh/yeah/uh that nobody would miss. When such a shout is missing from the lyrics file, flag it so it can be
+found in the audio.

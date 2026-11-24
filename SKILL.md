@@ -30,6 +30,20 @@ Every show has a different mix of cameras and the user has opinions about them. 
 9. **Output size and where things go**: 4K or 2K (at 2K a ~3K GoPro fills the frame; no inset needed),
    the review folder (render there first) and the publish folder (only on the user's go; keep 4K and
    2K side by side as e.g. `MultiCam.4K.AI` / `MultiCam.2K.AI` rather than overwriting).
+   - **The layout one user settled on, with plain names:**
+     - `Videos/` holds the version without lyrics;
+     - `Videos.WithLyrics/` holds the version with lyric visuals;
+     - `Audio/` holds the per-song FLACs;
+     - each video folder has the songs, `00-Full Show.mp4` and `Metadata/`;
+     - `Metadata/` holds the render sidecars, `STATS.html`/`STATS.md`/`stats.csv` and `youtube.txt`.
+   - **Publish only a finished version.** A review folder being re-rendered holds a mix of old and new songs.
+     Wait for the render, clean its `old/` archive, regenerate the stats, build the full show from that folder,
+     copy (overwriting if the user says so), and compare file sizes.
+   - **Don't rename folders that something still uses.**
+     - Renaming an output folder under a pending publish would silently recreate the old name: repoint the
+       publish first.
+     - Renaming a source folder (the audio FLACs the renderer muxes) mid-render breaks the remaining songs:
+       defer the rename until the renders finish, then update the paths in the scripts.
 10. **Per-song style -- harsh or soft.** Propose a two-column split and let the user flip songs; ask why
     when you disagree and write the reason down. Harsh = plain cuts, normal-speed moves; soft = short
     dissolves, half-speed moves. The MELODY decides, not tempo or guitar weight (a heavy riff song with
@@ -583,6 +597,30 @@ annotation's `text` field. The renderer matches lines by fragment.
   - in songs with no phone footage, a fixed camera may turn into a vertical slice during phrases that carry chosen
     lines, so the words get side panels (up to 3 extra verticals per song).
 
+**Corrections from the next review: a fallback is not a new default.** The user's note had been "while the zoom
+leaves no room, fall back to fewer words". It was over-applied in two ways, and the result was called "dull":
+- **The lyricist's keywords became the default for every line.** A wide panel showed "guys" instead of "Me and some
+  guys", and loose keywords kept stray punctuation ("vale piensen,", "quit,").
+- **Every song lost the look the user loved.** It moved from the warm automatic look (cream text, soft glow,
+  title words in orange, full phrases that vanish quickly) to an undesigned generic one.
+
+Rules now:
+- **The word count adapts to the room, line by line:**
+  - a wide panel (450 px and up) shows the whole sung line;
+  - a medium panel (300-450 px) shows the lyricist's picked words;
+  - a narrow panel shows the hero word, and a negation is always kept.
+
+  A line the user split across panels, or pinned to one, stays exactly as picked.
+- **Never replace a look the user praised in order to fix something else.** Keep it as the base, and send any new
+  per-song design to the designer agent, building on that look.
+- **A line leaves one beat after its last word is sung** (at least 1.5 s on screen). Holding until the next line
+  on the same panel left words "on forever".
+- **The cut follows the text.** No cut, from any rule, may fall inside a shown line. It moves to just after the
+  line (the outgoing shot runs on, if its clip has footage), or else to just before it. Each shot keeps at least
+  half a phrase. A cut in the middle of a phrase read as "split brain".
+- **The user's examples are illustrations, not specifications.** ("Jimmy / quit" showed the idea of fewer words; it
+  was not a required layout.)
+
 **Director rule from this round, for both versions: the preferred phone wins the START of a fixed-cam take.** The
 "phone first" rule only replaced fixed-cam takes the phone covered completely. A great phone shot lost a 20 s take
 it covered for its first 8 s.
@@ -594,6 +632,117 @@ Now the phone takes the start, under these limits:
 - a phone take that then runs straight on is joined.
 
 The preferred phone's ceiling went up from 4/6 to 5/7 phrases (harsh/soft).
+
+### Rolling the designed lyrics out safely, and what each pilot taught
+**Roll out in growing batches.** Design one song and get it approved, then 2 more, then 3. Each pilot surfaced a
+general bug before it could spread to 25 songs.
+
+**One shared look, one small module per song.** The approved song's code became a shared base: phrase layout, the
+warm glow, title-word emphasis, word entrances and exits, and the room-adaptive tiers. Each song then adds only its
+signature details in a module of its own, drawn from the designer agent's spec. Include the base and every module
+in the render cache key, or a change to the base never reaches the cached pieces.
+
+**Re-aligning collapsed lines: jointly, then validated.** A whole-song alignment can collapse repeated lines, so
+words go missing from the screen even though the panel has room. The first repair aligned each line alone inside
+one voice block and kept the best score. It was wrong twice:
+- one voice block often holds two or three lines;
+- forced alignment always places a line somewhere, and scores of different lines can't be compared.
+
+A line came out 3.6 s late, and the user caught it. Now:
+- the lines of a section are aligned together, in sung order, with a wildcard token between lines for breaths;
+- a result is accepted only when every word sits on detected singing (±0.3 s), there is no gap over 1.5 s inside
+  a line, lines are ordered without overlapping, and the pace is plausible (0.6-7 words/s);
+- a rejection prints where every word landed, so the cause is visible;
+- verify with timestamped frames before reporting.
+
+**When the order of a repeated chorus can't be confirmed, show its meaning instead of every line.** One chorus
+repeats the same phrase in an order the lyrics file didn't match, and nothing validated. Its meaning is the
+repeated shrug of the title phrase, so the screen showed only that phrase, stacking up on its sung onsets. The
+user loved it. A block with no evidence of singing stays empty.
+
+**Cuts and text: think in visible text blocks, not single lines.** Moving a cut out of one line put it in the
+middle of the line before it, because the two overlapped on opposite panels. The rule now:
+- merge every line's on-screen span (entrance to exit, any panel) into continuous text blocks;
+- move a cut that falls inside a block to the block's nearest edge, toward the shot that has room for text first,
+  within the clips' footage and keeping at least a bar per shot;
+- repeat until stable;
+- every render prints "cuts inside text", which must be empty.
+
+**Two room bugs the pilots found:**
+- A line starting a few frames before a shot with side panels measured zero room and was dropped. Measure the
+  room from the first frame that has panels.
+- The "no cut-away while a line is sung" rule kept a horizontal phone clip that has no panels. It then cancelled
+  the fixed camera's vertical slice, which did have room. Apply the rule only to vertical phone clips.
+
+**Publishing a mixed set.** The lyrics folder can mix approved designed songs with songs still on the previous
+version. Never publish an undesigned look the user called dull. Rebuild the full show from the exact set, check
+that video and audio lengths match, compare each copy's size with its source, and give the upload text a title
+that says which version it is (for example "| With Lyrics" or "| Full Concert").
+
+### The room-map workflow: every sung line with room gets text (a production line of agents)
+The designed rollout still left whole verses empty. One song lost 14 lines, and the reason was structural: "room"
+had only ever meant side panels, so lines sung over horizontal shots never reached the lyricist, and the lyricist
+left silences by default. The band leader: "this song could be almost fully written, so many good stuff".
+
+**The chain now, per song:**
+1. **Room map before any agent runs.** For every sung line: "panel" (side-panel width over the line), "pic" (corner
+   boxes over the picture with no head in them for the whole line), or "none". Measure it on the rendered no-lyrics
+   video at 2 fps: panel width only inside zoom/vertical shots, heads from a pose model on the same frames.
+2. **Lyricist with the room map.** Every sung line with room shows something. Silence needs a reason: repeat,
+   echo, filler, unreliable, slur. Corner lines carry at most 3 words; panel lines show the whole line when it fits.
+3. **Timing, validated.** Collapsed or overlapping sections are re-aligned jointly (forced alignment) and only
+   validated results are used. Two validator additions:
+   - singing of 3 s or more inside the window that no line covers means a line is missing from the text (a repeat
+     of a chant was left out and the old validator passed);
+   - a held one- or two-word line may be slow.
+
+   Speech-to-text is for discovery only (what is sung, its order, shouts missing from the lyrics file). No
+   speech-to-text timestamp is ever drawn.
+4. **Designer.** Every chosen line, in its room. Corner text uses one shared tier in the base look: frame-pixel
+   sizes, a soft dark plate and a drop shadow. Never aim for "sparse".
+5. **Implement, smoke-test, gap-check.** Draw one frame at each line's start, middle and end with the song's
+   module before rendering (a missing import cost a full render). Then check that every chosen line has an event.
+6. **Render, then QA on real frames, then publish.**
+
+**A QA agent, taught with every past review note** (`agents/lyric-qa.md`). It reviews each render on timestamped
+frames and returns PASS or issues with timestamp, likely root cause and who fixes it. It found things the automated
+checks passed:
+- text on screen through a 26-frame crossfade (the cut check tested only the cut instant);
+- a corner line over the stage sign, a monitor, an exit sign (the room map only knew faces);
+- a praised panel line that lost its panel because a new corner line merged into its text block and pushed the cut;
+- signature effects too small to read on a phone.
+
+**Director rules that came out of QA:**
+- Text blocks for cut placement are padded by half the song's dissolve, not a fixed 0.1 s.
+- Corner text and panel text merge into one block only when they truly overlap. A cut between them is where the
+  room changes, so it is where the shot should change.
+- A cut that still can't leave the text becomes a plain cut: no crossfade under words.
+
+**One producer agent per song, for scale.** Passing every specialist's report through the orchestrator does not
+scale to a whole show. A producer agent plays lyricist, timing and designer for one song from a shared brief,
+writes everything to disk (picks, validated fixes, spec, module, line table) and passes the smoke test and gap
+check. The orchestrator keeps what must be serial or independent: rendering (one at a time), QA and publishing.
+- **Copyright.** Agents were stopped by the content filter for typing lyrics. Picks use word indexes into the
+  lyrics file, files are built by scripts that read it, and no message carries more than 5 lyric words.
+- **GPU contention is real.** Six producers running speech-to-text, room maps and previews beside a render
+  saturated the GPU: encoder and decoder errors, dead background jobs, agents waiting for hours on files that never
+  came. Cap the concurrent GPU jobs, use one render queue with retry, and wake agents whose waiters died.
+- **A fix found by QA goes back to the song's producer**, who knows its module.
+
+**Distinctive screams and crowd shouts are signature moments, never filler.** A shout the audience knows may be in
+no lyrics file. Find it in the audio (speech-to-text on the stem and the full mix), confirm it with a validated
+forced alignment on a tight window, and give it a bold crowd treatment.
+
+**Registered overlays.** Effects tied to a performer's body (doodle bursts on claps, tracked with pose and beat)
+are saved as a transparent layer plus a registration file per song, and re-applied after every render of that song,
+so a re-render never loses them. Lessons from the clap overlay:
+- a clap counts when the beat, the clap sound and raised arms agree;
+- when the pose is unsure, use the nearest sure position;
+- a burst always sits above the head;
+- short pose dropouts under stage light are bridged.
+
+**Extending an approved song.** When the leader asks for corner text on a song he already approved, the approved
+lines must stay pixel-identical. Add rows; never restyle.
 
 ### Blinking lights fool motion estimation
 
