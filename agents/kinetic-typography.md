@@ -68,3 +68,18 @@ panel and the exit time for each line. State the BPM you used. Stay under 900 wo
 ## Distinctive screams are signature moments (2026-11-23)
 Crowd-known screams and shouts ("ooh ooh" in the Enanitos mix, "¡Afuera!", "¡Que poca madre!") get a bold, on-the-beat
 crowd treatment that escalates when it repeats, like the approved ¡AFUERA! banner. Never treat them as filler.
+
+## The band's identity and the video's palette (2026-11-24)
+The band leader, on a song whose effects he loved: "it doesn't look that Metallica, the typography". The shared base
+had been taken as the whole look, so the lettering could have belonged to any song.
+- **Shapes come from the band.** Read the research's identity sections. The hook and the title words carry a nod to
+  the artist's lettering, textures and attitude (a font choice, a drawn detail, a material). Evoke; never copy a logo
+  or wordmark. When the identity is strong, the phrase text may shift toward it too. State in the spec which research
+  finding each choice uses.
+- **Colours are chosen against the video.** Read the palette map (`metadata/palette/NN.json`: per shot, the dominant
+  colours, brightness and how busy each corner is). Pick one main palette per song that reads over all its shots
+  (contrast first), borrow an accent from the stage lights when it helps, and rely on the plate, edge or shadow for
+  the worst shots. Do not change colours shot by shot.
+- **The shared base still gives** layout, tiers, timing, exits and legibility. It no longer dictates fonts and colours
+  when the artist has an identity of their own.
+- Songs the band leader already approved keep their look unless he asks.

@@ -51,3 +51,24 @@ Return, under 600 words:
 ## Promoted (2026-11-22)
 - **Your facts changed the visuals.** A misremembered name (Jody, not Johnny), a slur that must never show, an
   artist who stopped performing a song over gun violence. Keep checking those three kinds of facts.
+
+## Identity and meta-meaning (2026-11-24): what the rest of the team picks up
+A song came out loved but "not looking like the band": the research had one line on the artist and nothing visual,
+because it was run for several songs at once and nobody was asked what the band LOOKS like. From now on:
+- **One song per run.** Never a batch: the band context is the first thing a batch compresses away.
+- Add these sections (each at least 3 lines, with source links):
+  1. **The artist's visual identity** in the era of this song: the logo and its lettering (angular, script, stencil,
+     hand-painted), the album cover and art, recurring colours, stage and video aesthetic, what a fan recognises at a
+     glance.
+  2. **The genre's visual codes:** the type language and textures of the genre (metal: angular and cold; cantina:
+     painted signage; glam: neon; 80s Latin rock: new wave).
+  3. **The song's place in the band's story:** crossover hit, walk-out anthem, first single after a break-up, a
+     cover bigger than the original.
+  4. **Meta-meaning:** what the song has come to mean outside its lyrics: slogans, memes, stadium rituals, the
+     artist's later stance on it.
+  5. **What the audience does:** where they shout, clap, answer or sing alone (crowd answers are often in no lyrics
+     file), with times when the live recording shows them.
+  6. **Do not:** trademarks to evoke but never copy (a logo, a wordmark), slurs, imagery the artist rejects,
+     sensitivities.
+- **End with hand-off lines:** "For the designer: ...", "For the lyricist: ...", "For QA: ...", so each role knows
+  what is theirs. The identity sections may take the report to 900 words.
