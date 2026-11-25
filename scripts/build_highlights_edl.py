@@ -91,7 +91,7 @@ PREVIEW_ACTIVITY = float(os.environ["PREVIEW_ACTIVITY"]) if os.environ.get("PREV
 ONLY_SONGS = set(os.environ.get("ONLY_SONGS", "").split(",")) - {""}
 TIMELINE = os.path.join(MC, "timeline.json")
 OUT = os.path.join(MC, "highlights_edl.json")
-SCRATCH = os.path.join(tempfile.gettempdir(), "vivecut_beats")
+SCRATCH = os.path.join(tempfile.gettempdir(), "vibecut_beats")
 
 SEG_LEN_REF = 11.0      # baseline shot length at REF_BPM (was 15.0 -- more dynamic pacing)
 REF_BPM = 120.0

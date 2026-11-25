@@ -41,7 +41,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-MC = os.environ.get("VIVECUT_SHOW_ROOT", r"C:\path\to\your\show-working-folder")
+MC = os.environ.get("VIBECUT_SHOW_ROOT") or os.environ.get("VIVECUT_SHOW_ROOT", r"C:\path\to\your\show-working-folder")
 EDL = os.path.join(MC, "highlights_edl.json")
 OUT_DIR = os.path.join(MC, "Preview", "highlights")
 SCRATCH = os.path.join(MC, "scratch", "highlight_render")

@@ -9,6 +9,14 @@ version, kinetic-typography lyric visuals (on blurred side panels beside a verti
 the picture). The band leader reviews every song by eye. Your job is to catch what he would catch, BEFORE he sees it.
 Every rule below comes from one of his real notes.
 
+**Never reproduce lyrics.** At most 5 consecutive lyric words anywhere in your output; refer to a line by its start
+time and to words by their index in the lyrics file. Outputs that print lyrics have been stopped by content filters.
+
+**Reading this file.** It grew by dated additions: where a later dated section disagrees with the text above it, the
+later section is the current rule. Frame size, panel widths, pixel boxes, fonts, song titles and timestamps are the
+reference show's (2560x1440 at 30 fps); take the real values from the room map and the show's files you are given.
+Scripts named here are not shipped with this skill (see "What ships" at the top of SKILL.md).
+
 ## How to review
 You get: the song number, the rendered video path, its sidecar (`<video>.json`: shots with times, sources, modes),
 the lyric annotation (`metadata/lyric_annotations/NN.json`), the lyricist picks with room (`metadata/lyricist/NN.json`),
@@ -70,10 +78,18 @@ the research's identity section), or could it belong to any song? ("It doesn't l
 Does the text read over every shot it appears on, and does it sit in the picture's palette instead of looking pasted
 on? Report a copied logo or wordmark as a blocker.
 
+**Speech bubbles and drawings near a person:** the band leader's note was that the bubble's pointer sat in front of the singer's face and the bubble was too big for her. Check on real frames across the whole life of the drawing (people move): the pointer ends beside or above the head with clear space, never across the face; the bubble is in proportion to the person it belongs to (not wider than about twice their body); the words still appear one by one on their sung times.
+
+**Signature animations need time to be enjoyed:** the band leader loved an animation and said it "disappears too quickly". For every signature drawing (the song's emblematic image), check its life on real frames: it must finish playing and then stay readable for at least about 1.5 s more, as long as nothing else needs the room and no cut arrives. A moving object (a ball, a coin) should complete a visible journey (enter, travel, leave the frame), not pop and vanish. Report a signature moment shorter than about 2.5 s in total as major.
+
+**Known and approved, do not report:** on a fixed camera's zoomed shots the picture sometimes sits inside a soft blurred border that grows and shrinks (up to about 4.5 % per side). This is the approved cinematic style for fixed cameras: when a zoom goes past 1.15x enlargement, the window shrinks onto a blurred fill instead of enlarging further. It is in both versions and is not a glitch or a wrong aspect ratio. What IS a finding: lyric text that straddles that border (half on the picture, half on the blur). Corner text on such a shot must sit inside the picture at its smallest size in that shot.
+
+**A forced line that scores near zero is the wrong line:** a spoken sentence was drawn as the sung joke because the alignment was forced onto the first words it could find; the last two words scored near zero and were reported as "buried under the lead voice". The band leader corrected it: there were two moments, a spoken invitation and then the scream on the chorus hook. When part of a line scores near zero, report it as "probably not said here" and ask what is really said, instead of accepting low-confidence timing. A joke or mishearing sung OVER a hook follows the hook's rhythm: its words map onto the hook's words.
+
 ## Report
 Start with **PASS** or **ISSUES (n)**. Then one line per issue, most severe first:
 `[severity: blocker|major|minor] mm:ss — what is wrong — likely root cause — who fixes it (lyricist / designer /
 timing (re-align) / director / implementation)`.
 Then "Checked:" listing the timestamps you actually looked at, so the coverage of your review is visible. Under 400
-words. Refer to lines by timestamp; quote at most 3 lyric words at a time and never print a lyrics file to
+words. Refer to lines by timestamp; quote at most 3 lyric words at a time (the general limit is 5; reviews stay stricter) and never print a lyrics file to
 your output (reviews were stopped by the content filter for that). Do not edit files; you only review.

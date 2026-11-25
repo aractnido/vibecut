@@ -35,36 +35,40 @@ drift accumulating over a whole song), and why each design choice exists.
 ## Requirements ⚙️
 
 `ffmpeg`/`ffprobe` on PATH, an NVIDIA GPU (every encode goes through NVENC, no CPU fallback), and
-Python 3 with `numpy`, `librosa`, and `opencv-python`. Pose/movement extraction uses a YOLO
-pose model (`ultralytics`).
+Python 3 with `numpy`, `scipy`, `librosa`, `opencv-python`, `torch` (CUDA) and `Pillow`. Pose/movement extraction
+uses a YOLO pose model (`ultralytics`). The `ffmpeg` build needs `libvidstab` (phone stabilization) and
+Vulkan/`libplacebo` (phone HDR→SDR); the final codec is AV1, which needs an RTX 40-series card or newer.
 
 ## Quick start 🚀
 
 The agent starts by asking you a few questions — which cameras you had, your **preferred video
 sources** and your **preferred audio sources** (often not the same), which camera covers every
 song, whether any camera sees the dance floor — and writes them into a `show.json`
-(`examples/show.example.json` documents every key). Then, from your show's working folder:
+(`examples/show.example.json` documents every key). Your clips must already be cut per song and named
+`NN-Title...` (two-digit song number first). Then point the scripts at your show's working folder and call them
+from wherever this repo is:
 
 ```powershell
-py scripts\sync_to_anchor.py          # every clip placed on one timeline, by audio
-py scripts\build_soundtrack.py        # soundtrack from your preferred audio sources, per-camera stems kept
-py scripts\extract_people.py <clips> <people>   # per camera: who's in frame, how much they move
-py scripts\link_signals.py
-py scripts\floor_energy.py            # dancing on the floor, for crowd moments
-py scripts\build_highlights_edl.py    # the director writes the scene script
-py scripts\render_cached.py 01        # render one song, review it, then the rest
+$env:VIBECUT_SHOW_ROOT = "C:\path\to\your\show"     # the folder that holds show.json
+$s = "C:\path\to\vibecut\scripts"
+py $s\sync_to_anchor.py          # every clip placed on one timeline, by audio
+py $s\build_soundtrack.py        # soundtrack from your preferred audio sources, per-camera stems kept
+py $s\extract_people.py <a camera's video folder> <its people_dir>   # per camera: who's in frame, how much they move
+py $s\link_signals.py
+py $s\floor_energy.py            # dancing on the floor, for crowd moments
+py $s\build_highlights_edl.py    # the director writes the scene script
+py $s\render_cached.py 01        # render one song, review it, then the rest
 ```
 
 Rendering goes through a fragment cache: every shot is encoded once (phone HDR converted to SDR on
 the way), so when you say "not that camera here", only that shot is re-encoded.
 
-A show with one continuous camcorder master still works the original way (`build_masters.py` →
-`build_timeline.py` → `build_highlights_edl.py` → `render_song.py`, see `SKILL.md`).
+Scripts read `show.json` from the folder named by `VIBECUT_SHOW_ROOT`, or from the current folder (the old name
+`VIVECUT_SHOW_ROOT` is still accepted). A show with one continuous camcorder master uses the same pipeline, with
+the camcorder as the anchor; the original master-camera scripts are kept and documented as the legacy path.
 
-## Requirements ⚙️ (in addition to the above)
-
-`scipy` for sync and the soundtrack; an `ffmpeg` build with Vulkan/`libplacebo` for the GPU HDR→SDR
-conversion.
+`SKILL.md` also documents a cinematic renderer and designed lyric visuals. Those are **method only**: the design
+and the lessons are there, the code is not in this repo. `SKILL.md` starts with a table of what ships.
 
 ## Status
 

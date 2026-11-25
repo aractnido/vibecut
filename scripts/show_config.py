@@ -1,6 +1,6 @@
 """show.json -- one file per show that names the cameras and their roles, read by the scripts that used to hardcode
 a roster (sync_to_anchor.py, build_soundtrack.py, floor_energy.py, build_highlights_edl.py, render_cached.py,
-link_signals.py). Lives in the show working folder ($VIVECUT_SHOW_ROOT/show.json); see examples/show.example.json.
+link_signals.py). Lives in the show working folder ($VIBECUT_SHOW_ROOT/show.json; the old name $VIVECUT_SHOW_ROOT still works); see examples/show.example.json.
 
 Every path in show.json may be absolute or relative to the show folder. Missing optional keys fall back to the
 defaults below. With NO show.json, build_highlights_edl.py keeps its original Nikon-anchor behaviour.
@@ -8,7 +8,7 @@ defaults below. With NO show.json, build_highlights_edl.py keeps its original Ni
 import json
 import os
 
-ROOT = os.environ.get("VIVECUT_SHOW_ROOT", os.getcwd())
+ROOT = os.environ.get("VIBECUT_SHOW_ROOT") or os.environ.get("VIVECUT_SHOW_ROOT", os.getcwd())
 
 DEFAULTS = {
     "anchor": {"camera": "nikon", "clock_fix_s": 0.0, "audio": "self"},
@@ -31,7 +31,7 @@ def load(required=True):
     f = os.path.join(ROOT, "show.json")
     if not os.path.exists(f):
         if required:
-            raise SystemExit(f"no show.json in {ROOT} (set VIVECUT_SHOW_ROOT; see examples/show.example.json)")
+            raise SystemExit(f"no show.json in {ROOT} (set VIBECUT_SHOW_ROOT; see examples/show.example.json)")
         return None
     cfg = json.load(open(f, encoding="utf-8"))
     for k, v in DEFAULTS.items():

@@ -1,13 +1,98 @@
 ---
-name: ai-director
-description: Build a fully-automated multicam edit of a whole show from several independent camera/phone sources (fixed cameras, GoPros, phones) -- syncs every clip by audio, cleans each camera (lens/roll correction, phone stabilization, HDR->SDR), measures movement and dance-floor energy, directs shot by shot on the beat from the user's preferred video sources, mixes a soundtrack from the user's preferred audio sources, and renders through a fragment cache so later changes re-encode only the shots that changed. Works with or without a continuous camcorder master. Use this whenever the user wants an automated full-show multicam edit driven by movement/energy/performer signals, as opposed to `bootlegcam`'s per-song manual-curation workflow.
+name: vibecut
+description: Build a fully-automated multicam edit of a whole show from several independent camera/phone sources (fixed cameras, GoPros, phones) -- syncs every clip by audio, cleans each camera (lens/roll correction, phone stabilization, HDR->SDR), measures movement and dance-floor energy, directs shot by shot on the beat from the user's preferred video sources, mixes a soundtrack from the user's preferred audio sources, and renders through a fragment cache so later changes re-encode only the shots that changed. Works with or without a continuous camcorder master. Use this whenever the user wants an automated full-show multicam edit driven by movement/energy/performer signals. Also documents, as method only, a cinematic renderer and designed lyric visuals.
 ---
 
-# AI Director
+# vibecut: the AI director
 
 Status: **end to end.** Proven on two full shows: one with a continuous camcorder master (the
 original Nikon-anchor path, documented from "Stage 1" on below), and one with no master at all
 (GoPros + phones only -- the `show.json` path in the next two sections).
+
+## Read this first: what is in this repo, and what is only described
+
+This document is a chronicle of two real shows, written as the work happened. Use it like this:
+
+- **Every new show uses the `show.json` pipeline** in the next two sections. A continuous camcorder master, split per
+  song, simply becomes the anchor camera. Everything from "Legacy path" down documents the first show: background, not
+  a path to follow.
+- **Later sections supersede earlier ones.** Review rounds changed rules, and the old statement was usually left in
+  place. Known cases: the far camera's move threshold (16 s, later two phrases); dissolves (fixed length, later one
+  beat long for both styles); lyric room (450 px panels, later three width tiers, later corners over the picture);
+  the lyricist's silence (allowed, later "silence needs a reason"); research batching (4-5 songs per run, later one
+  song per run). When two statements disagree, the later section wins.
+- **Sections titled as bugs** ("A critical EDL bug", "A second, more damaging sync bug", the GoPro "sync bug" scare)
+  describe problems already fixed in the scripts. Keep the rule each one ends with; there is nothing to run.
+
+### What ships, and what is method only
+
+| Capability | In `scripts/`? |
+|---|---|
+| The `show.json` pipeline: lens/roll correction, shake detection and stabilization, audio sync, soundtrack, people and movement, floor energy, the director's scene script, the cached renderer (`render_cached.py`) | **Yes, runnable** |
+| Portrait zoom (`portrait_zoom.py`), song map (`song_map.py`), window stabilization (`window_stabilize.py`) | **Yes** |
+| Legacy master-camera path (`build_masters.py`, `build_timeline.py`, `make_song_windows.py`, `render_song.py`, `precise_audio_sync.py`, `sync_by_song_window.py`) | Yes, but tied to the first show's layout |
+| Edit statistics (`edit_stats.py`, `edit_stats_report.py`, `edit_stats_html.py`) | Yes, but they read the cinematic renderer's sidecar (`shots`, `phrase_boundaries`, `style`), which `render_cached.py` does not write |
+| The **cinematic renderer**: virtual push/pull moves on fixed cameras, vertical cut + fill, beat-length dissolves, phrase-snapped cuts, the body/transition cache, per-song shot overrides | **No. Method only** |
+| The **lyric-visuals pipeline**: forced alignment and its validator, room map, palette map, the lyric layer and per-song effect modules, annotation tables, cut prediction, registered overlays, smoke test, gap check | **No. Method only** |
+| The full-show builder (join, crossfaded show audio, chapters), instrument tab lanes, the stem-subtraction audio fix | **No. Method only** |
+
+"Method only" means the sections give the design, the rules and the lessons, enough to rebuild the tool, not to run
+it. The code lived in one show's working folder. Script names that appear in those sections and in
+`agents/producer-brief.md` do not exist here: `render_cinematic.py`, `lyric_layer.py`, `lyric_annot.py`,
+`lyric_fx_base.py`, `lyric_fx_NN.py`, `realign_window.py`, `realign_sections.py`, `build_annot_table.py`,
+`predict_cuts.py`, `palette_map.py`, `gap_check_room.py`, `smoke_fx.py`, `merge_lyricist.py`, `vocals_tmp.py`. Asked to
+"add lyrics to a song", say so first: the pipeline has to be built before it can be run.
+
+Other skills named in the text (`bootlegcam`, `stage-movement-analysis`, `crowd-scene-analysis`, `doodle-video`,
+`concert-video-pipeline`) are not part of this repo and are optional. Their scripts (`extract_pose.py`,
+`analyze_audio_quality.py`, `detect_blackouts.py`, `detect_zoom_glow.py`, `batch_zoom_glow.py`, `build_song.py`,
+`build_fullshow_video.py`, `demo_multicam.py`, `analyze.py`) and their virtual environments (`.venv`, `.venv-depth`, a
+`band-analysis` folder) appear in commands copied from the original machine: use any Python environment that has the
+packages below, and skip a step that needs a skill you do not have.
+
+### Prerequisites
+
+- An NVIDIA GPU. Every decode and encode goes through NVDEC/NVENC; the final codec is AV1 (`av1_nvenc`), which needs
+  an RTX 40-series card or newer.
+- `ffmpeg`/`ffprobe` on PATH, built with NVENC/NVDEC, `libvidstab` (phone stabilization) and Vulkan/`libplacebo`
+  (phone HDR to SDR).
+- Python 3 with `numpy`, `scipy`, `librosa`, `opencv-python`, `ultralytics` (it downloads `yolo11x-pose.pt` on first
+  use), `torch` with CUDA (GPU lens correction, portrait zoom, depth) and `Pillow`. `lens_calibrator.py` is a tkinter
+  GUI and needs a display.
+- The examples use Windows paths and the `py` launcher. The title font defaults to a Windows font; set `render.font`
+  in `show.json` elsewhere.
+
+### What the pipeline expects before step 1
+
+- Every clip is already **cut per song and named `NN-Title...`**, two-digit song number first. Files whose name does
+  not start with a song number are skipped without a message.
+- The anchor camera's folder holds **one file per song**; the song titles are read from those file names.
+- A camera that recorded continuously must be split per song first. The legacy section shows how the first show did
+  it (`make_song_windows.py`, `build_masters.py`).
+
+### Running it, and how to tell a step worked
+
+Set `VIBECUT_SHOW_ROOT` to the show's working folder (or `cd` there) and call each script by its full path:
+`py <this skill>\scripts\sync_to_anchor.py`. The scripts are in the skill folder, not in the show folder.
+
+- **Sync** prints `placed N clips, K verified; wrote timeline.json`. Unverified clips are dropped downstream without
+  a message: see "Unverified phone clips" before going on.
+- **Movement**: `extract_people.py <that camera's video folder> <that camera's people_dir from show.json>`.
+- **Link** prints `<camera>: N clips, P on processed video, L with activity`. L should equal N; "0 with activity"
+  means the people folder or the file names do not match, not that nobody moved.
+- **Render** prints one line per song, `NN OK ... video X s vs script Y s` or `NN FAILED ...`. A failed song does not
+  stop the batch, so read every line.
+- **Done** means the user has reviewed every song, and then the full show is built. That builder is not shipped: join
+  the song files by stream copy and build one audio track with short crossfades (see "Delivery gotchas").
+
+### Common tasks
+
+- **Render one song:** `render_cached.py NN`.
+- **Use another camera at a given moment:** change that song's segments in `highlights_edl.json`, or list intervals
+  to avoid in the file named by `director.avoid_shots`, then render the song again. Only changed shots are re-encoded.
+  (`metadata/shot_overrides/NN.json`, described under review round 4, belongs to the cinematic renderer.)
+- **Add lyric visuals:** not runnable from this repo. Read "Lyric visuals" down to "Review round 4" for the method and
+  `agents/` for the roles, then build the pipeline.
 
 ## First: ask the user (never assume a camera combination)
 
@@ -70,7 +155,7 @@ Never start renders while they are still looking or asking; never chain the next
 ## Shows without a continuous master: the `show.json` pipeline
 
 `examples/show.example.json` documents every key. Order of steps (each script reads `show.json`
-from `$VIVECUT_SHOW_ROOT`):
+from `$VIBECUT_SHOW_ROOT`; the old name `$VIVECUT_SHOW_ROOT` still works):
 
 | Step | Script | Notes |
 |---|---|---|
@@ -554,7 +639,14 @@ The text version, `scripts/edit_stats.py`, is still there for the console.
 
 ### Lyrics for every song: researcher, then lyricist, then designer agents (`agents/`)
 
-Three subagents, each with one job; the definitions are in this repo's `agents/` folder:
+Three subagents, each with one job; the definitions are in this repo's `agents/` folder. **Install:** a skill's
+`agents/` folder is not registered automatically. Copy `song-researcher.md`, `lyricist.md`, `kinetic-typography.md`
+and `lyric-qa.md` to `.claude/agents/` (project) or `~/.claude/agents/` and start a new session. If an agent type is
+unavailable, spawn a general-purpose agent and tell it to read the file and act as that role. `producer-brief.md`
+is not an agent definition: it is the prompt for one general-purpose agent that prepares one song. The agents
+describe roles; the scripts they mention are not shipped (see "What ships" at the top).
+
+The roles:
 - **`song-researcher`**: who wrote the song, when, why it matters, who sings it and how. Then the subtext: the
   metaphors, who speaks to whom, the turn in the last chorus, call and response. It writes a reading; it doesn't
   design. Its quality bar is a reading the user loved. Run one per 4-5 songs in parallel.
@@ -764,6 +856,63 @@ Now:
 - **QA asks:** does the hook's lettering look like this artist, and does the text sit in the picture's palette?
 - Songs already approved keep their look unless the band leader asks.
 
+### Review round 4: hand-fixed shots, fixing a wrong note, drawings that follow people
+The band leader reviewed the designed lyric videos song by song. Most notes were small, and each one became either a
+tool or a checklist item.
+
+**Hand-fixed shots (opt-in, per song).** Some requests are exactly what the pacing rules remove: "he says the line,
+she answers, the camera goes to each of them, line by line", or "cut to the other camera before my mistake". A file
+`metadata/shot_overrides/NN.json` lists shots `{start, end, source}` (optional `mode`, `hold`, `cut: "plain"`,
+`join`) that REPLACE whatever the director scheduled in their span. It is applied after every director pass, in both
+versions (with and without lyrics) and in the cut prediction, so nothing merges or moves them and the prediction
+equals the render. `join` melts an override into the director's shot of the same take next to it, which lets one file
+end at the same time in both versions although the director's own cut differs between them. Regression rule: the
+predicted cuts of every song without an override file must be byte-identical before and after touching this code.
+- **Call and answer:** cut in the middle of the gap between the two voices (validated word times), plain cuts when
+  text sits on both sides, each line living entirely inside its own shot. Check whether the answer really exists for
+  every line: the first answer was missing from the lyrics and was found by its higher register.
+- **A drawing tracked on a person** (a halo over a praying singer) is tracked per camera and switches camera with
+  the cuts; a tracker's start rule that worked on one framing picked a bystander on another.
+
+**A wrong note.** Two tools, used together, and "cut" means the picture only:
+1. Move the camera away before it starts: to a framing that does not show the player, right after the previous lyric
+   line has left the screen (the dissolve needs its text-free margin).
+2. Lower only that instrument: separate it with a source-separation model on an excerpt, then
+   `new = mix - k(t) * stem`, with short ramps placed between notes. Everything outside the window stays bit-identical
+   because the mix itself is never re-synthesised. Apply it to the MASTER audio file every render reads, keep the
+   original beside it, and verify: samples changed only inside the window, tags and cover intact. Measure honestly:
+   the low band dropped far less than the nominal 10 dB because the kick drum shares it; at the bass-note
+   frequencies it was 8-9 dB.
+
+**Instrument tab lanes.** On a portrait shot with blurred side panels, the notes being played can scroll as two
+vertical tab lanes (guitar on one side, bass on the other; draw as many strings as the instrument has). Fingering
+comes from tabs the band supplies; timing comes from the recording's onsets; detected pitch only confirms, and where
+the performance differs from the tab, follow the audio and list those places for the player. Find the tuning first
+(fret numbers stay as written whatever the absolute pitch). It is a registered overlay, and it must fade out before a
+slow zoom grows the picture into the panel.
+
+**Words that were never said there.** A joke line was force-aligned onto the first matching words; its last two
+words scored near zero and were reported as "buried under the lead voice". The band leader corrected it: a spoken
+invitation first, then the joke screamed over the chorus hook. A forced line whose words score near zero is probably
+not said at that point: ask what is really said. A line sung over a hook follows the hook's rhythm, and still gets
+its own forced alignment.
+
+**The band leader's ear is an anchor.** One bridge had unvalidated timing; he said one phrase was sung four seconds
+earlier than drawn. A joint, ordered re-alignment of the whole list with his time as a hard constraint validated every
+line, showed the items come at a steady spacing, and moved the section's punchline by eight seconds.
+
+**Checklist items that came out of it** (all in `agents/lyric-qa.md`): a speech bubble's pointer ends beside or above
+the head, never across the face, for its whole life; signature drawings need time to be enjoyed (about 2.5 s, and a
+moving object completes a journey); corner text on a zoomed fixed camera sits inside the picture at its smallest
+size in the shot, slam overshoot included (the blurred border itself is the approved style); an on-screen title can
+differ from the file's title (`display_title`).
+
+**Running it.** One render at a time through a queue. Forty frame-hashing workers starved the renders and one failed
+with an OS handle error: cap helper jobs at a handful of processes. An agent with no file activity for an hour is
+stalled: stop it and resume it from its transcript. Re-checks are cheapest when the SAME reviewer is resumed with an
+old-versus-new comparison of the whole song. An approved video is moved to the archive, not copied: no second copy
+stays in the working folder.
+
 ### Blinking lights fool motion estimation
 
 Bright stage lights facing the camera (blinders, strobes, colour washes) look like camera motion to every motion
@@ -823,7 +972,16 @@ else preferred phone, else another fixed cam. Re-render only the songs that chan
 - **"Face not visible" is not "turned away"**: tight phone close-ups crop the head out entirely and
   read as a back view to a keypoint test. Require the head region in frame before calling a back view.
 
-This skill is deliberately a thin layer over several existing skills, not a reimplementation of their
+## Legacy path: the first show (one continuous camcorder master)
+
+Everything from here to the end documents the first show: a camcorder that recorded the whole concert, split per
+song, with camera names (`nikon`, `iris`, `nova`) and folder names from that show. **A new show does not follow this
+part**; it uses the `show.json` pipeline near the top, with the camcorder as the anchor. Read on for background: why
+each design choice exists, and the bugs that shaped the scripts. "Stage 1" is camera metadata and the timeline,
+"Stages 2-3" are the director and the renderer of that show. Commands here were copied from the original machine and
+name other skills and environments (see "What ships" at the top).
+
+This skill was first built as a thin layer over several existing skills, not a reimplementation of their
 logic:
 - **`bootlegcam`** -- per-clip technical metadata (`analyze_audio_quality.py`, `detect_blackouts.py`,
   `detect_zoom_glow.py`), the `clip_override` boost/only data shape (the eventual target shape for this
@@ -837,8 +995,9 @@ logic:
 - **`doodle-video`**'s `pick_window()` -- precedent for combining a movement signal and an energy
   signal into one score.
 
-Show-agnostic by design: every script here takes camera/folder paths as CLI arguments, nothing about a
-specific show, venue or band roster is hardcoded.
+The `show.json` pipeline is show-agnostic: its scripts read cameras and folders from `show.json`. The legacy
+scripts are not: without a `show.json`, `build_highlights_edl.py` falls back to the first show's camera roster, and
+`render_song.py` and `sync_by_song_window.py` expect that show's layout.
 
 ## Stage 1 — camera metadata + unified timeline
 
@@ -1338,18 +1497,16 @@ caches every shot) turns one song's EDL entry into a finished video:
   This is now a permanent feature of this script, not a one-off for this show -- it's what made
   answering "what is the provenance of that video at minute 2" a 10-second JSON lookup instead of
   another round of frame-scrubbing.
-- **Final-output codec: `av1_nvenc`** (preset p7, cq 23, uncapped vbr, 8-bit `yuv420p`) -- matches
+- **Final-output codec: `av1_nvenc`** (preset p7, cq 23, uncapped vbr, 10-bit `yuv420p10le` with explicit BT.709 limited-range tags) -- matches
   `concert-video-pipeline`'s own established final-master standard (see its `04-Publish-Video.ps1`).
   Originally this script used `h264_nvenc` (cq 18, preset p5), inherited from the lens-correction/
   stabilization scripts rather than matched to the project's actual final-render convention --
   measured real difference re-encoding one already-rendered song: **42.9% smaller** at AV1 cq23 vs the
   original H.264 cq18 output, same visual quality tier. AV1 NVENC hardware encode needs an Ada-
   generation GPU (RTX 40-series+) -- same requirement `concert-video-pipeline` already documents.
-  Deliberately kept 8-bit (not matching `concert-video-pipeline`'s 10-bit `p010le`) -- a 10-bit
-  render earlier in this same project came out unplayable until forced back to 8-bit; 8-bit is also
-  genuinely sufficient here since the real delivery target (YouTube) converts everything to 8-bit
-  BT.709 limited-range on ingest regardless of what's uploaded (confirmed against YouTube's own
-  published encoding guidance) -- true 10-bit only matters for genuine HDR mastering (a different,
+  The output is 10-bit to match the camcorder master's own depth, and the colour tags are pinned explicitly: a
+  first 10-bit render without them was unplayable. YouTube converts everything to 8-bit BT.709 limited-range on
+  ingest regardless of what is uploaded (confirmed against YouTube's own published encoding guidance) -- true 10-bit only matters for genuine HDR mastering
   much bigger undertaking: BT.2020 primaries + PQ/HLG transfer function + mastering-display metadata,
   none of which this footage was shot or graded for), not just "upload more bits."
   **Switching codecs mid-show is dangerous**: all 22 songs must share identical encode parameters for

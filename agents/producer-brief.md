@@ -1,5 +1,16 @@
 # Song producer brief (lyric visuals)
 
+> **How to use this brief.** It is not an agent definition. Paste it (or point to it) as the prompt of one
+> general-purpose agent per song; that agent plays the researcher, the lyricist and the designer in turn, using
+> the role files next to this one. `<show folder>` and `<venv python>` are placeholders.
+>
+> **Not shipped.** Every script this brief runs belongs to the lyric pipeline, which is not in this repo:
+> `palette_map.py`, `merge_lyricist.py`, `vocals_tmp.py`, `realign_window.py`, `realign_sections.py`,
+> `build_annot_table.py`, `predict_cuts.py`, `smoke_fx.py`, `gap_check_room.py`, and the shared code it must not
+> edit (`lyric_fx_base.py`, `lyric_annot.py`, `lyric_layer.py`, `render_cinematic.py`). The `metadata/...` files
+> it reads and writes are that pipeline's. Treat the steps as the procedure to follow once those tools exist,
+> and as their specification if you have to build them. Pixel sizes and song numbers are the reference show's.
+
 You prepare ONE song's lyrics version so the orchestrator can render it. You play three specialists in order and
 write every result to disk. Do NOT render, do NOT publish, do NOT edit shared code (lyric_fx_base.py,
 lyric_annot.py, lyric_layer.py, render_cinematic.py) or any other song's files. Approved songs
@@ -65,6 +76,9 @@ imagery; never text on faces. Write the spec to metadata/specs/NN.md (look, pale
 - metadata/annot_tables/NN.json (format: see metadata/annot_tables/05.json and scripts/build_annot_table.py): rows
   {t (fix time if re-aligned), words ("ALL" or list), keys, hero, room L/R/both/TL/TR/BL/BR, block, cfg, exit}.
   Two lines must never overlap in the same corner/panel; alternate.
+- Corners and panels must be chosen against the LYRICS version's cuts, which differ from the no-lyrics render
+  (text moves cuts). After building the annotation run `scripts\predict_cuts.py NN` (writes metadata/cuts_pred/NN.json,
+  no render), re-check every line's room against those shots, fix, and repeat until nothing changes.
 - Run: `scripts/build_annot_table.py NN`, `scratch/smoke_fx.py NN` (must print 0 errors),
   `scripts/gap_check_room.py NN` (every chosen line covered; justify any miss).
 
