@@ -33,7 +33,7 @@ import numpy as np
 import torch
 import torch.nn.functional as Fn
 
-CACHE = os.environ.get("VIVECUT_SHAKE_CACHE", os.path.join("cache", "shake"))   # relative to the show folder
+CACHE = os.environ.get("VIBECUT_SHAKE_CACHE") or os.environ.get("VIVECUT_SHAKE_CACHE", os.path.join("cache", "shake"))   # relative to the show folder
 VERSION = "shake-3-glk"
 SIGMA_S = float(os.environ.get("SHAKE_SIGMA", "0.6"))   # seconds: slower motion is kept (walking, drift)
 ROI = (0.25, 0.95)

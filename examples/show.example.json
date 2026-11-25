@@ -1,5 +1,5 @@
 {
-  "_comment": "One show's roster. ASK the user for every choice marked (ask) -- never assume a camera combination. Paths are absolute or relative to the show folder ($VIVECUT_SHOW_ROOT).",
+  "_comment": "One show's roster. ASK the user for every choice marked (ask) -- never assume a camera combination. Paths are absolute or relative to the show folder ($VIBECUT_SHOW_ROOT).",
 
   "anchor": {
     "camera": "cam_a",

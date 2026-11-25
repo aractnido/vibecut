@@ -70,6 +70,14 @@ the research's identity section), or could it belong to any song? ("It doesn't l
 Does the text read over every shot it appears on, and does it sit in the picture's palette instead of looking pasted
 on? Report a copied logo or wordmark as a blocker.
 
+**Speech bubbles and drawings near a person:** the band leader's note was that the bubble's pointer sat in front of the singer's face and the bubble was too big for her. Check on real frames across the whole life of the drawing (people move): the pointer ends beside or above the head with clear space, never across the face; the bubble is in proportion to the person it belongs to (not wider than about twice their body); the words still appear one by one on their sung times.
+
+**Signature animations need time to be enjoyed:** the band leader loved an animation and said it "disappears too quickly". For every signature drawing (the song's emblematic image), check its life on real frames: it must finish playing and then stay readable for at least about 1.5 s more, as long as nothing else needs the room and no cut arrives. A moving object (a ball, a coin) should complete a visible journey (enter, travel, leave the frame), not pop and vanish. Report a signature moment shorter than about 2.5 s in total as major.
+
+**Known and approved, do not report:** on a fixed camera's zoomed shots the picture sometimes sits inside a soft blurred border that grows and shrinks (up to about 4.5 % per side). This is the approved cinematic style for fixed cameras: when a zoom goes past 1.15x enlargement, the window shrinks onto a blurred fill instead of enlarging further. It is in both versions and is not a glitch or a wrong aspect ratio. What IS a finding: lyric text that straddles that border (half on the picture, half on the blur). Corner text on such a shot must sit inside the picture at its smallest size in that shot.
+
+**A forced line that scores near zero is the wrong line:** a spoken sentence was drawn as the sung joke because the alignment was forced onto the first words it could find; the last two words scored near zero and were reported as "buried under the lead voice". The band leader corrected it: there were two moments, a spoken invitation and then the scream on the chorus hook. When part of a line scores near zero, report it as "probably not said here" and ask what is really said, instead of accepting low-confidence timing. A joke or mishearing sung OVER a hook follows the hook's rhythm: its words map onto the hook's words.
+
 ## Report
 Start with **PASS** or **ISSUES (n)**. Then one line per issue, most severe first:
 `[severity: blocker|major|minor] mm:ss — what is wrong — likely root cause — who fixes it (lyricist / designer /

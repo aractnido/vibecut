@@ -70,7 +70,7 @@ Never start renders while they are still looking or asking; never chain the next
 ## Shows without a continuous master: the `show.json` pipeline
 
 `examples/show.example.json` documents every key. Order of steps (each script reads `show.json`
-from `$VIVECUT_SHOW_ROOT`):
+from `$VIBECUT_SHOW_ROOT`; the old name `$VIVECUT_SHOW_ROOT` still works):
 
 | Step | Script | Notes |
 |---|---|---|
@@ -763,6 +763,63 @@ Now:
   still gives layout, tiers, timing and legibility.
 - **QA asks:** does the hook's lettering look like this artist, and does the text sit in the picture's palette?
 - Songs already approved keep their look unless the band leader asks.
+
+### Review round 4: hand-fixed shots, fixing a wrong note, drawings that follow people
+The band leader reviewed the designed lyric videos song by song. Most notes were small, and each one became either a
+tool or a checklist item.
+
+**Hand-fixed shots (opt-in, per song).** Some requests are exactly what the pacing rules remove: "he says the line,
+she answers, the camera goes to each of them, line by line", or "cut to the other camera before my mistake". A file
+`metadata/shot_overrides/NN.json` lists shots `{start, end, source}` (optional `mode`, `hold`, `cut: "plain"`,
+`join`) that REPLACE whatever the director scheduled in their span. It is applied after every director pass, in both
+versions (with and without lyrics) and in the cut prediction, so nothing merges or moves them and the prediction
+equals the render. `join` melts an override into the director's shot of the same take next to it, which lets one file
+end at the same time in both versions although the director's own cut differs between them. Regression rule: the
+predicted cuts of every song without an override file must be byte-identical before and after touching this code.
+- **Call and answer:** cut in the middle of the gap between the two voices (validated word times), plain cuts when
+  text sits on both sides, each line living entirely inside its own shot. Check whether the answer really exists for
+  every line: the first answer was missing from the lyrics and was found by its higher register.
+- **A drawing tracked on a person** (a halo over a praying singer) is tracked per camera and switches camera with
+  the cuts; a tracker's start rule that worked on one framing picked a bystander on another.
+
+**A wrong note.** Two tools, used together, and "cut" means the picture only:
+1. Move the camera away before it starts: to a framing that does not show the player, right after the previous lyric
+   line has left the screen (the dissolve needs its text-free margin).
+2. Lower only that instrument: separate it with a source-separation model on an excerpt, then
+   `new = mix - k(t) * stem`, with short ramps placed between notes. Everything outside the window stays bit-identical
+   because the mix itself is never re-synthesised. Apply it to the MASTER audio file every render reads, keep the
+   original beside it, and verify: samples changed only inside the window, tags and cover intact. Measure honestly:
+   the low band dropped far less than the nominal 10 dB because the kick drum shares it; at the bass-note
+   frequencies it was 8-9 dB.
+
+**Instrument tab lanes.** On a portrait shot with blurred side panels, the notes being played can scroll as two
+vertical tab lanes (guitar on one side, bass on the other; draw as many strings as the instrument has). Fingering
+comes from tabs the band supplies; timing comes from the recording's onsets; detected pitch only confirms, and where
+the performance differs from the tab, follow the audio and list those places for the player. Find the tuning first
+(fret numbers stay as written whatever the absolute pitch). It is a registered overlay, and it must fade out before a
+slow zoom grows the picture into the panel.
+
+**Words that were never said there.** A joke line was force-aligned onto the first matching words; its last two
+words scored near zero and were reported as "buried under the lead voice". The band leader corrected it: a spoken
+invitation first, then the joke screamed over the chorus hook. A forced line whose words score near zero is probably
+not said at that point: ask what is really said. A line sung over a hook follows the hook's rhythm, and still gets
+its own forced alignment.
+
+**The band leader's ear is an anchor.** One bridge had unvalidated timing; he said one phrase was sung four seconds
+earlier than drawn. A joint, ordered re-alignment of the whole list with his time as a hard constraint validated every
+line, showed the items come at a steady spacing, and moved the section's punchline by eight seconds.
+
+**Checklist items that came out of it** (all in `agents/lyric-qa.md`): a speech bubble's pointer ends beside or above
+the head, never across the face, for its whole life; signature drawings need time to be enjoyed (about 2.5 s, and a
+moving object completes a journey); corner text on a zoomed fixed camera sits inside the picture at its smallest
+size in the shot, slam overshoot included (the blurred border itself is the approved style); an on-screen title can
+differ from the file's title (`display_title`).
+
+**Running it.** One render at a time through a queue. Forty frame-hashing workers starved the renders and one failed
+with an OS handle error: cap helper jobs at a handful of processes. An agent with no file activity for an hour is
+stalled: stop it and resume it from its transcript. Re-checks are cheapest when the SAME reviewer is resumed with an
+old-versus-new comparison of the whole song. An approved video is moved to the archive, not copied: no second copy
+stays in the working folder.
 
 ### Blinking lights fool motion estimation
 

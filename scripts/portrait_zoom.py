@@ -51,7 +51,7 @@ VERSION = "pz-2"
 HEADROOM, FOOTROOM, BOT_MAX = 0.04, 0.03, 0.92
 REAL_MIN = 0.65
 SSIM_OK = 0.9925   # calibrated: the reviewed dim-stage phone clip measures f_eff 0.50 with this GPU test
-CACHE = os.environ.get("VIVECUT_PZ_CACHE", os.path.join("cache", "portrait_zoom"))
+CACHE = os.environ.get("VIBECUT_PZ_CACHE") or os.environ.get("VIVECUT_PZ_CACHE", os.path.join("cache", "portrait_zoom"))
 NVENC = ["-c:v", "av1_nvenc", "-preset", "p7", "-rc", "vbr", "-cq", "23", "-b:v", "0",
          "-pix_fmt", "yuv420p10le", "-color_range", "tv", "-color_primaries", "bt709",
          "-color_trc", "bt709", "-colorspace", "bt709"]

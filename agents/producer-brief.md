@@ -65,6 +65,9 @@ imagery; never text on faces. Write the spec to metadata/specs/NN.md (look, pale
 - metadata/annot_tables/NN.json (format: see metadata/annot_tables/05.json and scripts/build_annot_table.py): rows
   {t (fix time if re-aligned), words ("ALL" or list), keys, hero, room L/R/both/TL/TR/BL/BR, block, cfg, exit}.
   Two lines must never overlap in the same corner/panel; alternate.
+- Corners and panels must be chosen against the LYRICS version's cuts, which differ from the no-lyrics render
+  (text moves cuts). After building the annotation run `scripts\predict_cuts.py NN` (writes metadata/cuts_pred/NN.json,
+  no render), re-check every line's room against those shots, fix, and repeat until nothing changes.
 - Run: `scripts/build_annot_table.py NN`, `scratch/smoke_fx.py NN` (must print 0 errors),
   `scripts/gap_check_room.py NN` (every chosen line covered; justify any miss).
 

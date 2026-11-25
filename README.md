@@ -55,6 +55,8 @@ py scripts\build_highlights_edl.py    # the director writes the scene script
 py scripts\render_cached.py 01        # render one song, review it, then the rest
 ```
 
+Scripts read `show.json` from the current folder, or from the folder named by `VIBECUT_SHOW_ROOT` (the old name `VIVECUT_SHOW_ROOT` is still accepted).
+
 Rendering goes through a fragment cache: every shot is encoded once (phone HDR converted to SDR on
 the way), so when you say "not that camera here", only that shot is re-encoded.
 

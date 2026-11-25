@@ -42,7 +42,7 @@ import numpy as np
 from audio_sync_utils import SR, aud, fmt, gcc_phat, parse
 
 FRAME_OUT_DIR = os.path.join(
-    os.environ.get("VIVECUT_SHOW_ROOT", r"C:\path\to\your\show-working-folder"),
+    os.environ.get("VIBECUT_SHOW_ROOT") or os.environ.get("VIVECUT_SHOW_ROOT", r"C:\path\to\your\show-working-folder"),
     "Preview", "sync_frames")
 
 
