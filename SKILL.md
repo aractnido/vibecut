@@ -29,7 +29,7 @@ This document is a chronicle of two real shows, written as the work happened. Us
 | Capability | In `scripts/`? |
 |---|---|
 | The `show.json` pipeline: lens/roll correction, shake detection and stabilization, audio sync, soundtrack, people and movement, floor energy, the director's scene script, the cached renderer (`render_cached.py`) | **Yes, runnable** |
-| Portrait zoom (`portrait_zoom.py`), song map (`song_map.py`), window stabilization (`window_stabilize.py`) | **Yes** |
+| The band zoom for vertical phone shots (`portrait_zoom_band.py` on `portrait_zoom.py`), song map (`song_map.py`), window stabilization (`window_stabilize.py`) | **Yes** |
 | Room-mic geometry per band (`mic_arrivals.py`) and the `audio-engineer` agent (`agents/`) | **Yes** |
 | The multi-mic mix: standardize every source once, layered recipes, blind-test waves (see "Audio from room mics") | **Method only**, except `mic_arrivals.py` |
 | Legacy master-camera path (`build_masters.py`, `build_timeline.py`, `make_song_windows.py`, `render_song.py`, `precise_audio_sync.py`, `sync_by_song_window.py`) | Yes, but tied to the first show's layout |
@@ -357,16 +357,34 @@ from virtual-PTZ research), then tuned by review:
 - **Open ideas from review, not built**: when the floor is very active, avoid fixed-cam -> fixed-cam
   cuts (go to a phone that sees the floor); the room's gesture moments (question 12) should show the floor.
 
-### Vertical phone shot -> almost horizontal (`scripts/portrait_zoom.py`, cached)
+### Vertical phone shots: the band zoom (official; `scripts/portrait_zoom_band.py` on `scripts/portrait_zoom.py`)
 
-A vertical clip normally sits full height on a blurred fill. A long vertical shot can instead slowly zoom until it
-is nearly landscape, cutting away the top (ceiling, wall) and a little of the bottom (floor, cables). Each rule
-below came from a review round on one 47 s shot:
+**Every vertical phone shot uses the band zoom.** It is how vertical footage is shown, not an occasional effect:
+the clip opens full height but already cut below the venue ceiling, on a blurred fill, then zooms slowly on the
+song's phrases until the band nearly fills a landscape frame. The picture widens as it zooms, so the side fills
+shrink; it stops where the phone's real detail runs out. `portrait_zoom_band.py` is the decision layer a renderer
+calls: `measure()` once per clip (portrait?, effective detail, max zoom, band limits, shake), `zoom_plan()` per shot
+(start on the first bar line after the shot starts, length from the liked speed, partial trip when the shot is
+short), `render()` -> the cached fragment. Only when a clip is not eligible (shake p95 above 150 px, or less than
+one phrase after the first bar line) does it fall back to the plain framing: full height on the fill, still with
+the start crop. A command line exists for single shots (see the script's docstring).
+
+Each rule below came from a review round (the first ones on one 47 s shot, the band-only and start-crop rules at a
+second show filmed from inside the crowd):
 
 - **Limits from the band, never a fixed line.** A hand-set top line was right at the start and cut every head
-  40 s later, after the operator stepped closer. Use pose data (`extract_people.py`): top = the highest person's
-  box top minus 4 % (hard, never cuts a head); bottom = the lowest ankle plus 3 %, capped at 92 % (soft). A ±2 s
-  envelope then a 1.5 s Gaussian, so the window moves before anyone would be cut.
+  40 s later, after the operator stepped closer. Use pose data (`extract_people.py`): top = the highest band
+  member's box top minus 7 % (hard: never cuts a head, and leaves room above it so the frame makes sense; 4 % put
+  the frame edge on the scalp); bottom = the lowest ankle plus 3 %, capped at 92 % (soft). A ±2 s envelope then a
+  1.5 s Gaussian, so the window moves before anyone would be cut.
+- **Band members only.** A phone filming from inside the crowd also sees the people in front of it, and counting
+  them kept the zoom from tightening (their heads and raised hands set the limits). The crowd in front is cut off
+  by the frame's bottom edge and mostly seen from behind; a band member faces the room. Only people whose box ends
+  above the bottom edge and whose face is visible (two of nose/eyes) set the limits; everyone big counts only when
+  nobody qualifies.
+- **Start below the ceiling** (`top=`, a fraction of the height, set per camera and venue). The first seconds of a
+  vertical shot showed the room's ceiling; the user asked to cut it and start at the stage lights (about 25 % at
+  that venue). The start window is never cut below the band's head limit.
 - **Quality limit from measured detail, not a percentage.** "Stop at 85 %" was arbitrary. The user's rule: never
   enlarge a pixel. A phone's nominal 4K is not real 4K, though: noise reduction, HEVC, low light and stabilization
   leave a dim stage with about 50 % of the nominal detail. `effective_detail()` measures it per clip on the GPU:
