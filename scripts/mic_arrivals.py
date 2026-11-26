@@ -3,8 +3,8 @@ mic, from audio alone (no multitrack needed).
 
 Input: aligned per-song WAVs, one per source, all on the same song timeline (e.g. <show>/std/NN-<source>.wav from the
 audio standardization step: offset + drift fitted, verified within ~1 ms).
-For every mic pair and band (bass 40-200 Hz, low-mid 200-1k, mid 1k-4k, high 4k-10k) it averages tapered GCC-PHAT over
-2 s windows (hop 1 s) where both mics recorded, and lists the strongest peaks within +-40 ms.
+For every mic pair and band (bass 40-200 Hz, low-mid 200-1k, mid 1k-4k, high 4k-10k) it averages the ENVELOPE of
+tapered GCC-PHAT over 2 s windows (hop 1 s) where both mics recorded, and lists the strongest peaks within +-40 ms.
 
 How to read it (lag > 0 = the sound reaches mic B later than mic A):
   - one sharp peak = both mics dominated by the same source (often one PA speaker);
@@ -25,7 +25,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 from scipy.io import wavfile
-from scipy.signal import butter, find_peaks, sosfiltfilt, windows
+from scipy.signal import butter, find_peaks, hilbert, sosfiltfilt, windows
 
 SR = 48000
 BANDS = {"bass 40-200 Hz": (40, 200), "low-mid 200-1k": (200, 1000), "mid 1k-4k": (1000, 4000),
@@ -55,7 +55,10 @@ def gcc_avg(args):
         P = Y * np.conj(X)
         P /= np.abs(P) + 1e-12
         c = np.fft.irfft(P, 2 * WIN)
-        acc += np.concatenate([c[-MAXLAG:], c[:MAXLAG + 1]])
+        # average the ENVELOPE, not the signed correlation: a clock drift of a fraction of a ms over the song
+        # shifts the fine oscillation between windows and cancels the peaks in a signed average (found on a real
+        # show: a 'strongest arrival' that existed in no single window)
+        acc += np.abs(hilbert(np.concatenate([c[-MAXLAG:], c[:MAXLAG + 1]])))
         n += 1
     return acc / max(n, 1), n
 
@@ -86,6 +89,7 @@ def main():
         for (band, _), col in zip(BANDS.items(), ["#c0392b", "#e67e22", "#2e86c1", "#16a085"]):
             c, n = res[i]
             i += 1
+            c = c - np.median(c)
             c = c / (np.abs(c).max() + 1e-12)
             pk, pr = find_peaks(c, height=0.25, distance=int(0.0015 * SR))
             top = sorted(zip(pr["peak_heights"], lags[pk]), reverse=True)[:4]
@@ -95,7 +99,7 @@ def main():
         ax.axvline(0, color="#888", lw=0.6)
         ax.set_title(f"{key}   (lag > 0: sound reaches {b} later)", fontsize=11, loc="left")
         ax.legend(fontsize=8.5, loc="upper right")
-        ax.set_ylim(-0.3, 1.05)
+        ax.set_ylim(-0.1, 1.05)
     np.atleast_1d(axes)[-1].set_xlabel("lag (ms)   1 ms = 0.343 m")
     fig.suptitle(f"Song {num}: arrival-time structure between mics (GCC-PHAT, averaged over the song)", fontsize=13)
     fig.tight_layout()
