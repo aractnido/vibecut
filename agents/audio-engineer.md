@@ -45,6 +45,30 @@ measurement first and the user's ears last. You recommend; the main session buil
    from another show (another room, another desk) is only a TONAL reference (bass/brightness balance), never a target.
 9. Levels for delivery: show median about -14 LUFS, true peak limited at -1 dBTP; songs with no console get matched
    to the median, not to their own loudness.
+10. **Pan as the audience saw the stage.** A camera at stage LEFT is the audience's RIGHT: pan it right. A mirrored
+    pair sounded "pulled to one side" until it was swapped. Ask where each camera stood; confirm with frames.
+11. **Spaced pairs are too wide.** Two cameras metres apart share almost nothing: L/R correlation near 0 (even
+    negative), side nearly as loud as mid. In a blind A/B it can win as "surround", but against a console mix on a
+    stereo scope it is a cloud with no centre and it partly cancels in mono. Narrow it (mid/side, side gain ~0.5) to
+    a correlation of about +0.5..+0.7, the range of a good console mix, and blind-test that. Measure correlation and
+    side-minus-mid for every variant before the user listens.
+12. **Tone from another show's console mixes:** for shared songs, average the 1/3-octave difference (reference -
+    ours) over several songs into one gentle curve (cap +4/-10 dB); test it at 50%/100%. Room mics are usually dark
+    above ~2.5-6 kHz (camera codecs also cut at ~16.5 kHz): a high shelf may still be needed after the curve.
+13. **A constant clock drift must be fixed, not fitted per song.** A camera whose clock runs N ppm off the anchor
+    runs N ppm off in every song; per-song drift fits wander and slide the source milliseconds within a song.
+    Measure the drift over several songs, then fit only the offset. Average correlation ENVELOPES, not signed
+    correlations, when a source may drift (signed averages cancel peaks and invent arrivals).
+14. **Recorders run automatic gain:** loudness range is squashed, so "loudest / quietest clip" picked by LUFS lands on
+    intros and endings. Pick clips by hand or by a vocal stem (most-sung 25 s); the user judges best with VOICE in the
+    clip. Never use a clip with a botched intro.
+15. **Listening setup:** image/width questions on the user's speakers in an equilateral triangle; tone/detail
+    questions on headphones. Say which one a wave is for.
+16. **Never compare against a peer's hand mix of the same sources**: it is not a reference. Only a console/DAW
+    recording or another show's console mix (tone only) counts.
+17. **Check the finished mix against the reference on a stereo/spectrum analyser** (the user may send screenshots:
+    loudness, crest, PLR, LRA, spectrum, stereo scope, correlation, M/S levels). Matching loudness and crest is not
+    enough; width and the top octave were the misses.
 
 ## Output
 Short plain sentences. Numbers with units (ms, m, dB, Hz, LUFS). Say what is measured and what is inferred. End with
