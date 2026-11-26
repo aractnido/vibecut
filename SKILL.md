@@ -382,9 +382,12 @@ second show filmed from inside the crowd):
   by the frame's bottom edge and mostly seen from behind; a band member faces the room. Only people whose box ends
   above the bottom edge and whose face is visible (two of nose/eyes) set the limits; everyone big counts only when
   nobody qualifies.
-- **Start below the ceiling** (`top=`, a fraction of the height, set per camera and venue). The first seconds of a
-  vertical shot showed the room's ceiling; the user asked to cut it and start at the stage lights (about 25 % at
-  that venue). The start window is never cut below the band's head limit.
+- **Start below the ceiling** (`top="auto"`, the default). The first seconds of a vertical shot showed the room's
+  ceiling; the user asked to cut it and start at the stage lights. "About 25 %" described that one shot, not a
+  rule: the operator's distance changes it shot by shot. So the start comes from the skeletons: 6 % of the height
+  above the band's head line (which already carries the 7 % headroom), about 13 % above the highest head, the row
+  of stage lights. On three clips of one song that gave 25 %, 32 % and 45 %. A number forces a fixed fraction,
+  still never below the head limit.
 - **Quality limit from measured detail, not a percentage.** "Stop at 85 %" was arbitrary. The user's rule: never
   enlarge a pixel. A phone's nominal 4K is not real 4K, though: noise reduction, HEVC, low light and stabilization
   leave a dim stage with about 50 % of the nominal detail. `effective_detail()` measures it per clip on the GPU:

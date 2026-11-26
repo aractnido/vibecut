@@ -12,8 +12,11 @@ landscape, by cutting away the top (ceiling, wall) and a little of the bottom (f
    Band only: a phone filming from inside the crowd also sees the people in front of it. They are cut off by the
    frame's bottom edge and mostly seen from behind; a band member faces the room. People whose box ends above the
    bottom edge AND whose face is visible (>= 2 of nose/eyes) set the limits (everyone big if nobody qualifies).
-1b. START BELOW THE CEILING (plan/fragment top=, a fraction of the height): the shot opens already cut at the
-   venue's lights instead of showing the ceiling first, never below the band's head limit.
+1b. START BELOW THE CEILING (plan/fragment top=): the shot opens already cut at the venue's lights instead of
+   showing the ceiling first. top="auto" (the default to use) places the start from the skeletons: START_ROOM (6 %)
+   above the band's head line, which already carries HEADROOM -- about 13 % above the highest head, the row of
+   stage lights in a typical crowd-level phone shot. A number is a fixed fraction (never below the head limit).
+   Why not a fixed fraction: the user's "about 25 %" described one shot; the operator's distance changes it per shot.
 2. QUALITY LIMIT FROM MEASURED DETAIL, NOT A PERCENTAGE. "Stop at 85 %" was arbitrary; the rule is never to
    enlarge a pixel -- and a phone's nominal 4K is not real 4K (noise reduction, HEVC, low light, stabilization).
    effective_detail() measures it: shrink the band region by f, enlarge it back; the smallest f that still
@@ -55,6 +58,7 @@ import window_stabilize as WS  # noqa: E402
 
 VERSION = "pz-3"   # pz-3: band-only limits, 7 % headroom, start crop (top=)
 HEADROOM, FOOTROOM, BOT_MAX = 0.07, 0.03, 0.92
+START_ROOM = 0.06   # top="auto": the shot opens this much (of the height) above the band's head line
 REAL_MIN = 0.65
 SSIM_OK = 0.9925   # calibrated: the reviewed dim-stage phone clip measures f_eff 0.50 with this GPU test
 CACHE = os.environ.get("VIBECUT_PZ_CACHE") or os.environ.get("VIVECUT_PZ_CACHE", os.path.join("cache", "portrait_zoom"))
@@ -166,7 +170,10 @@ def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0, ref=None, top=0.0
         che = max(bt - tp, min_h)
         p = min(1.0, max(0.0, (u - m0) / (m1 - m0)))
         p = amount * p * p * p * (p * (p * 6 - 15) + 10)   # amount < 1: a partial zoom (same speed, shorter trip)
-        y0 = max(0.0, min(start_crop * sh, tp, sh - che))         # start window [y0, sh]: below the ceiling, above heads
+        if start_crop == "auto":                           # from the skeletons: START_ROOM above the band's head
+            y0 = max(0.0, min(tp - START_ROOM * sh, sh - che))   # line (which already has HEADROOM) = the lights row
+        else:                                               # a fixed fraction, never below the head limit
+            y0 = max(0.0, min(float(start_crop) * sh, tp, sh - che))
         s0 = sh - y0
         ch = math.exp(math.log(s0) + (math.log(che) - math.log(s0)) * p)
         cy = y0 + (tp - y0) * (s0 - ch) / (s0 - che) if s0 - che > 1 else tp
@@ -211,7 +218,7 @@ def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.
     spec = {"src": _stat(clip), "pose": _stat(npz), "in": round(a, 3), "out": round(b, 3), "frames": n_frames,
             "zoom": [round(m0, 3), round(m1, 3)], "limits": [HEADROOM, FOOTROOM, BOT_MAX], "real_min": REAL_MIN,
             "ssim_ok": SSIM_OK, "f_eff": info["f_eff"], "stab": list(stab), "shake": [WS.VERSION, WS.SIGMA_S, WS.ROI],
-            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "ref": [round(x, 3) for x in ref] if ref else None, "title": title, "top": round(top, 3), "enc": NVENC, "v": VERSION}
+            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "ref": [round(x, 3) for x in ref] if ref else None, "title": title, "top": top if top == "auto" else round(top, 3), "enc": NVENC, "v": VERSION}
     key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:20]
     path = os.path.join(CACHE, key + ".mp4")
     if os.path.exists(path) and os.path.exists(path + ".json"):

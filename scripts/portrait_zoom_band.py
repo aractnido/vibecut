@@ -17,7 +17,7 @@ This script is the decision layer every renderer should use:
 Usage:
   py portrait_zoom_band.py measure <clip> <pose.npz>
   py portrait_zoom_band.py render <clip> <pose.npz> <in_s> <out_s> <song_t_of_in> <phrase_boundaries> <out.mp4>
-        [--top 0.25] [--size 2560x1440]
+        [--top auto|FRACTION] [--size 2560x1440]
     phrase_boundaries: a song map JSON with "phrases" [{"t0", "t1"}...] (song_map.py) or a comma list of song
     times, one per 4-bar phrase. pose.npz: extract_people.py output for the clip (vertical shape kept).
 """
@@ -86,7 +86,7 @@ def zoom_plan(meta, song_t, length, bounds):
     return {"m0": starts[0], "m1": starts[0] + use * phrase, "amount": min(1.0, use / n_phr), "phrases": use}
 
 
-def render(clip, pose, a, b, song_t, bounds, out, top=0.0, size=(2560, 1440), meta=None):
+def render(clip, pose, a, b, song_t, bounds, out, top="auto", size=(2560, 1440), meta=None):
     meta = meta or measure(clip, pose, size[1])
     zp = zoom_plan(meta, song_t, b - a, bounds)
     n = round((b - a) * 30)
@@ -106,7 +106,7 @@ def main():
     r = sub.add_parser("render")
     for k in ("clip", "pose", "a", "b", "song_t", "phrases", "out"):
         r.add_argument(k)
-    r.add_argument("--top", type=float, default=0.0)
+    r.add_argument("--top", default="auto", help="start crop: auto (from the skeletons) or a fraction of the height")
     r.add_argument("--size", default="2560x1440")
     args = ap.parse_args()
     if args.cmd == "measure":
@@ -114,7 +114,8 @@ def main():
         return
     w, h = (int(x) for x in args.size.lower().split("x"))
     zp, hit = render(args.clip, args.pose, float(args.a), float(args.b), float(args.song_t),
-                     phrase_bounds(args.phrases), args.out, args.top, (w, h))
+                     phrase_bounds(args.phrases), args.out,
+                     args.top if args.top == "auto" else float(args.top), (w, h))
     print(("plain framing (not eligible)" if not zp["amount"] else
            f"zoom {zp['phrases']} phrases from {zp['m0']:.2f}s, amount {zp['amount']:.2f}"),
           "(cache hit)" if hit else "", "->", args.out)
