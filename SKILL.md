@@ -30,6 +30,8 @@ This document is a chronicle of two real shows, written as the work happened. Us
 |---|---|
 | The `show.json` pipeline: lens/roll correction, shake detection and stabilization, audio sync, soundtrack, people and movement, floor energy, the director's scene script, the cached renderer (`render_cached.py`) | **Yes, runnable** |
 | Portrait zoom (`portrait_zoom.py`), song map (`song_map.py`), window stabilization (`window_stabilize.py`) | **Yes** |
+| Room-mic geometry per band (`mic_arrivals.py`) and the `audio-engineer` agent (`agents/`) | **Yes** |
+| The multi-mic mix: standardize every source once, layered recipes, blind-test waves (see "Audio from room mics") | **Method only**, except `mic_arrivals.py` |
 | Legacy master-camera path (`build_masters.py`, `build_timeline.py`, `make_song_windows.py`, `render_song.py`, `precise_audio_sync.py`, `sync_by_song_window.py`) | Yes, but tied to the first show's layout |
 | Edit statistics (`edit_stats.py`, `edit_stats_report.py`, `edit_stats_html.py`) | Yes, but they read the cinematic renderer's sidecar (`shots`, `phrase_boundaries`, `style`), which `render_cached.py` does not write |
 | The **cinematic renderer**: virtual push/pull moves on fixed cameras, vertical cut + fill, beat-length dissolves, phrase-snapped cuts, the body/transition cache, per-song shot overrides | **No. Method only** |
@@ -259,6 +261,43 @@ cluster agreeing within 30 ms, accept if >= 3 windows and >= 40 % of the counted
 placement that overlaps another clip from the same phone. It recovered a clip the old search had
 dropped ("perfectly on sync" on review), and when re-run it also nudged OTHER clips by small amounts --
 apply only the clips you set out to fix, not the whole re-measured timeline.
+
+### Audio from room mics (no multitrack): measure, layer, blind-test
+
+The soundtrack decides whether the video feels like the concert, so treat audio as a first-class step, not a fill-in
+from `build_soundtrack.py`'s priority list. Most shows have no multitrack: room mics on cameras, phones, maybe a
+console/DAW mix for some songs. The `audio-engineer` agent (`agents/audio-engineer.md`) holds the method below; run it
+before building any mix or blind test and after each verdict, and give it the show's notes (room, sources, who sings).
+
+1. **Standardize once.** Every source of a song on the anchor's timeline: offset + clock drift fitted from tapered
+   GCC-PHAT windows, ONE resample (soxr), re-measured (target: within 1 ms). Phones get a lag curve (they move:
+   1 m = 2.9 ms). Never EQ, mix or blind-test unaligned sources: a console comparison built on per-song console files
+   cut at different offsets (and drifting ~28 ppm) was invalid and had to be thrown away.
+2. **Read the room from the audio** (`scripts/mic_arrivals.py`): GCC-PHAT averaged over the song, per band, per mic
+   pair. One sharp peak = both mics dominated by the same source (usually one PA). Extra peaks at the SAME lags in two
+   songs = other sources: the far PA (~16 ms = ~5.6 m at one show), a stage amp vs the PA subs in the bass. A mic with
+   several equal peaks is the "room" mic: it hears band and both PAs blended, and a close mic layered under it can only
+   match one of its arrivals. Ask the user where each camera stood, then confirm with frames (a tripod in another
+   camera's shot) and a depth map; the user may name cameras differently from the files, so use the file names.
+3. **Pick a representative song** for every wave: full band, up tempo, the main singer. A solo vocal or a slow song
+   hides the band's balance. Prefer a song that has a console/DAW mix too: it is the ruler for tone and timing. A mix
+   of the same song from another show (another room, another desk) is a tonal reference only.
+4. **Blind-test in small waves** (4-6 variants, two clips: loudest and quietest 25 s where every source has audio),
+   loudness-matched (BS.1770), random names, seamless A/B. Change one thing per wave.
+5. **What won, so far:**
+   - With a console: the console untouched, plus the nearest camera's own stereo as a room layer (presence EQ,
+     high-pass 600 Hz, -12 dB), plus the bass from a camera next to the bass amp (35-200 Hz, de-boomed, aligned per
+     song to the console's bass, -3 dB vs the console's bass energy), plus a front-row phone above 600 Hz at -12 dB.
+   - Without a console: the two far-apart cameras panned hard left/right (each mono, loudness-matched). With no dry
+     source underneath, their 13-20 ms spread reads as width, not flam ("yes, wider"). At a second show this pair
+     also beat a good stereo camera mic in the middle of the room for "surround", in both clips; layers at -12 dB
+     under that room mic were too subtle to hear.
+6. **Timing before dB.** The user hears a flam before an EQ difference. Align a layer to one arrival of the main
+   source (per band if needed), and test competing arrivals by ear when the main source has several.
+7. **Phones:** the holder's own voice is audible; clips of a few seconds add nothing; some phones (Samsung) stamp
+   the END of a recording, so check a phone's clock against a camera before trusting it.
+8. **Delivery:** median song at -14 LUFS, true peak limited at -1 dBTP; songs with no console are matched to the
+   show median, not to their own loudness.
 
 ### Cinematic camera work on the fixed cameras (reviewed shot by shot with the user)
 
@@ -641,7 +680,8 @@ The text version, `scripts/edit_stats.py`, is still there for the console.
 
 Three subagents, each with one job; the definitions are in this repo's `agents/` folder. **Install:** a skill's
 `agents/` folder is not registered automatically. Copy `song-researcher.md`, `lyricist.md`, `kinetic-typography.md`
-and `lyric-qa.md` to `.claude/agents/` (project) or `~/.claude/agents/` and start a new session. If an agent type is
+and `lyric-qa.md` (and `audio-engineer.md`, for the soundtrack) to `.claude/agents/` (project) or `~/.claude/agents/`
+and start a new session. If an agent type is
 unavailable, spawn a general-purpose agent and tell it to read the file and act as that role. `producer-brief.md`
 is not an agent definition: it is the prompt for one general-purpose agent that prepares one song. The agents
 describe roles; the scripts they mention are not shipped (see "What ships" at the top).
