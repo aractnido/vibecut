@@ -7,9 +7,9 @@ portrait_zoom.py (limits from the band, quality from measured detail, timing in 
 
 This script is the decision layer every renderer should use:
   measure(clip, pose)  -> per-clip facts: portrait?, effective detail f_eff, max zoom, band limits, shake.
-  zoom_plan(...)       -> the zoom for one shot: start on the first bar line after the shot starts, length from the
-                          liked speed (~0.05 log-zoom/s, >= 2 phrases; bigger zooms get more), a partial trip at the
-                          same speed when the shot is too short. Not eligible (shake p95 > 150 px, or less than one
+  zoom_plan(...)       -> the zoom for one shot: it ENDS on the last bar line before the shot's end (thin fills at the
+                          cut), length from the liked speed (~0.05 log-zoom/s, >= 2 phrases; bigger zooms get more),
+                          in whole bars; a partial trip at the same speed when the shot is too short. Not eligible (shake p95 > 150 px, or less than one
                           phrase after the first bar line) -> the plain framing: full height on the fill, still with
                           the start crop below the ceiling.
   render(...)          -> portrait_zoom.fragment() (cached, stabilized, fill derived from the same window).
@@ -76,14 +76,18 @@ def zoom_plan(meta, song_t, length, bounds):
     phrase = float(np.median(np.diff(bounds)))
     bars = [b0 + j * (b1 - b0) / 4 for b0, b1 in zip(bounds, bounds[1:]) for j in range(4)]
     starts = [x - song_t for x in bars if x - song_t > 0.1]
-    if not starts:
+    ends = [x for x in starts if x <= length - 0.5]
+    if not starts or not ends:
         return None
+    bar = phrase / 4
     n_phr = max(MIN_PHRASES, math.ceil(math.log(meta["max_zoom"]) / (ZOOM_SPEED * phrase)))
-    n_fit = int((length - 0.5 - starts[0]) // phrase)
-    if n_fit < 1:
+    n_bars = int(round((ends[-1] - starts[0]) / bar))
+    if n_bars < 4:                       # less than one phrase
         return None
-    use = min(n_phr, n_fit)
-    return {"m0": starts[0], "m1": starts[0] + use * phrase, "amount": min(1.0, use / n_phr), "phrases": use}
+    # The zoom ENDS on the last bar line before the shot's end, as many whole bars as fit at the liked speed: a
+    # short shot that zoomed only at its start cut out with big fills into a full-width camera ("the sides jump").
+    use = min(4 * n_phr, n_bars)
+    return {"m0": ends[-1] - use * bar, "m1": ends[-1], "amount": min(1.0, use / (4 * n_phr)), "phrases": use / 4}
 
 
 def render(clip, pose, a, b, song_t, bounds, out, top="auto", size=(2560, 1440), meta=None):
@@ -117,7 +121,7 @@ def main():
                      phrase_bounds(args.phrases), args.out,
                      args.top if args.top == "auto" else float(args.top), (w, h))
     print(("plain framing (not eligible)" if not zp["amount"] else
-           f"zoom {zp['phrases']} phrases from {zp['m0']:.2f}s, amount {zp['amount']:.2f}"),
+           f"zoom {zp['phrases']:.2f} phrases {zp['m0']:.2f}-{zp['m1']:.2f}s, amount {zp['amount']:.2f}"),
           "(cache hit)" if hit else "", "->", args.out)
 
 
