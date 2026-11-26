@@ -27,6 +27,13 @@ Research (keep it short, with sources):
   slow dance, a party song, a protest song? This decides whether the visuals feel personal or communal.
 - **How the band played it:** only what the lyrics file and the given windows show (for example, a long singalong
   section, or verses cut).
+- **The music video** (its own section; the band asked for it: the video is part of what the audience remembers):
+  director and year; where it happens and what happens (the story, or the performance setting); the iconic images a
+  fan recognises (a rooftop under searchlights, a gym pep rally, a cage); how it reframes or extends the lyrics (does
+  it tell the same story, a different one, or none); its colour, light and editing feel; its reception and any
+  controversy (bans, protests, warning-label campaigns); and what our visuals may borrow as an idea versus must never
+  copy or echo (footage, logos, people, imagery the controversy was about). Say plainly when a song had no official
+  video, or several.
 
 Reading (this is the heart of the work):
 - **What the song says on the surface**, in two or three sentences.
