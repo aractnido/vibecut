@@ -5,9 +5,15 @@ landscape, by cutting away the top (ceiling, wall) and a little of the bottom (f
 
 1. LIMITS COME FROM THE BAND, NOT FROM A FIXED LINE. A hand-set top line (50 %) was right at the start of the shot
    and cut everyone's heads 40 s later, after the phone operator stepped closer. Per frame (pose data, e.g.
-   extract_people.py's npz): top = highest person box top, bottom = lowest ankle (else box bottom); a +-2 s
-   envelope (min for the top, max for the bottom) then a Gaussian (1.5 s) -- the window starts moving BEFORE anyone
-   would be cut. Top gets HEADROOM (4 %) and is hard; bottom gets FOOTROOM (3 %), capped at BOT_MAX (92 %), soft.
+   extract_people.py's npz): top = highest BAND MEMBER's box top, bottom = their lowest ankle (else box bottom); a
+   +-2 s envelope (min for the top, max for the bottom) then a Gaussian (1.5 s) -- the window starts moving BEFORE
+   anyone would be cut. Top gets HEADROOM (7 %: room above the heads, not a frame edge on the scalp) and is hard;
+   bottom gets FOOTROOM (3 %), capped at BOT_MAX (92 %), soft.
+   Band only: a phone filming from inside the crowd also sees the people in front of it. They are cut off by the
+   frame's bottom edge and mostly seen from behind; a band member faces the room. People whose box ends above the
+   bottom edge AND whose face is visible (>= 2 of nose/eyes) set the limits (everyone big if nobody qualifies).
+1b. START BELOW THE CEILING (plan/fragment top=, a fraction of the height): the shot opens already cut at the
+   venue's lights instead of showing the ceiling first, never below the band's head limit.
 2. QUALITY LIMIT FROM MEASURED DETAIL, NOT A PERCENTAGE. "Stop at 85 %" was arbitrary; the rule is never to
    enlarge a pixel -- and a phone's nominal 4K is not real 4K (noise reduction, HEVC, low light, stabilization).
    effective_detail() measures it: shrink the band region by f, enlarge it back; the smallest f that still
@@ -47,8 +53,8 @@ import torch.nn.functional as Fn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import window_stabilize as WS  # noqa: E402
 
-VERSION = "pz-2"
-HEADROOM, FOOTROOM, BOT_MAX = 0.04, 0.03, 0.92
+VERSION = "pz-3"   # pz-3: band-only limits, 7 % headroom, start crop (top=)
+HEADROOM, FOOTROOM, BOT_MAX = 0.07, 0.03, 0.92
 REAL_MIN = 0.65
 SSIM_OK = 0.9925   # calibrated: the reviewed dim-stage phone clip measures f_eff 0.50 with this GPU test
 CACHE = os.environ.get("VIBECUT_PZ_CACHE") or os.environ.get("VIVECUT_PZ_CACHE", os.path.join("cache", "portrait_zoom"))
@@ -76,9 +82,12 @@ def band_limits(npz):
             continue
         bx, k = box[m], kp[m]
         big = (bx[:, 3] - bx[:, 1]) > 0.05 * fh            # drop tiny false detections
-        if not big.any():
+        face = (k[:, 0:3, 2] > 0.3).sum(1) >= 2            # band members face the room
+        band = big & (bx[:, 3] < 0.97 * fh) & face          # the crowd in front is cut off by the bottom edge
+        sel = band if band.any() else big
+        if not sel.any():
             continue
-        bx, k = bx[big], k[big]
+        bx, k = bx[sel], k[sel]
         top[f] = bx[:, 1].min() / fh
         an = np.where(k[:, 15:17, 2] > 0.3, k[:, 15:17, 1], np.nan)
         feet = np.where(np.isfinite(an).any(1), np.nanmax(np.where(np.isfinite(an), an, -1), 1), bx[:, 3])
@@ -138,8 +147,10 @@ def effective_detail(clip, a, b, rows=(0.42, 0.86)):
     return f_eff
 
 
-def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0, ref=None):
-    """Keyframes (shot time u, crop_y, crop_h) every `step` s + the parameters that decided them."""
+def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0, ref=None, top=0.0):
+    """Keyframes (shot time u, crop_y, crop_h) every `step` s + the parameters that decided them.
+    top: start crop as a fraction of the height (the shot opens cut below the ceiling), never below the head limit."""
+    start_crop = top                                  # 'top' is reused below for the band's top line
     sw, sh = WS._dims(clip)
     f_eff = effective_detail(clip, *(ref or (a, b)))   # whole shot: every piece of it frames identically
     min_h = out_h * REAL_MIN / f_eff
@@ -155,8 +166,10 @@ def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0, ref=None):
         che = max(bt - tp, min_h)
         p = min(1.0, max(0.0, (u - m0) / (m1 - m0)))
         p = amount * p * p * p * (p * (p * 6 - 15) + 10)   # amount < 1: a partial zoom (same speed, shorter trip)
-        ch = math.exp(math.log(sh) + (math.log(che) - math.log(sh)) * p)
-        cy = tp * (sh - ch) / (sh - che) if sh - che > 1 else tp
+        y0 = max(0.0, min(start_crop * sh, tp, sh - che))         # start window [y0, sh]: below the ceiling, above heads
+        s0 = sh - y0
+        ch = math.exp(math.log(s0) + (math.log(che) - math.log(s0)) * p)
+        cy = y0 + (tp - y0) * (s0 - ch) / (s0 - che) if s0 - che > 1 else tp
         keys.append((float(u), float(cy), float(ch)))
     return keys, {"f_eff": f_eff, "min_h": min_h, "sw": sw, "sh": sh}
 
@@ -184,20 +197,21 @@ def _banner(title, font, hold, fade, work, key):
 
 def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.15, 0.5), work="scratch",
              fill_sigma=8.0, amount=1.0, ref=None, title=None, font="C:/Windows/Fonts/segoeuib.ttf", title_hold=4.0,
-             title_fade=0.5):
+             title_fade=0.5, top=0.0):
     # fill_sigma: user picked 8 of 4/8/12 at 640x360 (only light and colour, no recognisable people).
     # amount < 1: partial zoom at the same speed (a shot too short for the whole trip still moves).
     # ref: (a, b) clip-local range of the WHOLE shot, when this fragment is only a piece of it (a body or a
     #      transition handle): detail and shake are measured on the whole shot, so every piece frames and
     #      stabilises identically and the pieces join without a jump.
     # title: (text, song time of the first frame) -> the song banner, for a shot that opens a song.
+    # top: start crop (fraction of the height): the shot opens below the venue ceiling (see plan()).
     """Render (or reuse) one shot. a/b: clip-local in/out; m0/m1: zoom start/end in shot time.
     Returns (path, hit)."""
-    keys, info = plan(clip, npz, a, b, m0, m1, out_h, amount=amount, ref=ref)
+    keys, info = plan(clip, npz, a, b, m0, m1, out_h, amount=amount, ref=ref, top=top)
     spec = {"src": _stat(clip), "pose": _stat(npz), "in": round(a, 3), "out": round(b, 3), "frames": n_frames,
             "zoom": [round(m0, 3), round(m1, 3)], "limits": [HEADROOM, FOOTROOM, BOT_MAX], "real_min": REAL_MIN,
             "ssim_ok": SSIM_OK, "f_eff": info["f_eff"], "stab": list(stab), "shake": [WS.VERSION, WS.SIGMA_S, WS.ROI],
-            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "ref": [round(x, 3) for x in ref] if ref else None, "title": title, "enc": NVENC, "v": VERSION}
+            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "ref": [round(x, 3) for x in ref] if ref else None, "title": title, "top": round(top, 3), "enc": NVENC, "v": VERSION}
     key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:20]
     path = os.path.join(CACHE, key + ".mp4")
     if os.path.exists(path) and os.path.exists(path + ".json"):
