@@ -364,8 +364,8 @@ the clip opens full height but already cut below the venue ceiling, on a blurred
 song's phrases until the band nearly fills a landscape frame. The picture widens as it zooms, so the side fills
 shrink; it stops where the phone's real detail runs out. `portrait_zoom_band.py` is the decision layer a renderer
 calls: `measure()` once per clip (portrait?, effective detail, max zoom, band limits, shake), `zoom_plan()` per shot
-(start on the first bar line after the shot starts, length from the liked speed, partial trip when the shot is
-short), `render()` -> the cached fragment. Only when a clip is not eligible (shake p95 above 150 px, or less than
+(the zoom ends on the last bar line before the shot's end, in whole bars at the liked speed, a partial trip when
+the shot is short), `render()` -> the cached fragment. Only when a clip is not eligible (shake p95 above 150 px, or less than
 one phrase after the first bar line) does it fall back to the plain framing: full height on the fill, still with
 the start crop. A command line exists for single shots (see the script's docstring).
 
@@ -382,12 +382,20 @@ second show filmed from inside the crowd):
   by the frame's bottom edge and mostly seen from behind; a band member faces the room. Only people whose box ends
   above the bottom edge and whose face is visible (two of nose/eyes) set the limits; everyone big counts only when
   nobody qualifies.
-- **Start below the ceiling** (`top="auto"`, the default). The first seconds of a vertical shot showed the room's
-  ceiling; the user asked to cut it and start at the stage lights. "About 25 %" described that one shot, not a
-  rule: the operator's distance changes it shot by shot. So the start comes from the skeletons: 6 % of the height
-  above the band's head line (which already carries the 7 % headroom), about 13 % above the highest head, the row
-  of stage lights. On three clips of one song that gave 25 %, 32 % and 45 %. A number forces a fixed fraction,
-  still never below the head limit.
+- **Start below the ceiling, keep only the lights** (`top="auto"`, the default). The first seconds of a vertical
+  shot showed the room's ceiling; the user asked to cut it and "just leave the lights". "About 25 %" described one
+  shot, not a rule, and a skeleton-only margin above the heads still left a lot of ceiling on a shot filmed from
+  further back. So the start is found in the picture: light fixtures blow out to near-white, and `lights_row()`
+  takes the lowest row of blown-out spots above the band's head line (the truss nearest the band; higher trusses,
+  a disco ball and the ceiling are cut away) on 1 frame/s of GPU frames; the shot opens 2 % above it. With no
+  lights found (a dark venue), 6 % above the band's head line. Depth is not needed: depth models confuse the
+  ceiling with the back curtain, while the lights mark exactly where the frame should start. A number forces a
+  fixed fraction, still never below the head limit.
+- **The zoom ends at the cut.** A 15 s shot zoomed only during its first phrase, then cut out with half-screen
+  fills into a full-width camera ("we jump aggressively the sides"). The zoom now ends on the last bar line before
+  the shot's end, as many whole bars as fit at the liked speed, so the fills are thinnest when the cut comes.
+- **One picture width per shot.** A shot is rendered in pieces (body, dissolve handles); the sway margin that
+  narrows the picture is measured over the whole shot, never per piece.
 - **Quality limit from measured detail, not a percentage.** "Stop at 85 %" was arbitrary. The user's rule: never
   enlarge a pixel. A phone's nominal 4K is not real 4K, though: noise reduction, HEVC, low light and stabilization
   leave a dim stage with about 50 % of the nominal detail. `effective_detail()` measures it per clip on the GPU:

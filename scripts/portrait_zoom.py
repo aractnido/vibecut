@@ -13,9 +13,10 @@ landscape, by cutting away the top (ceiling, wall) and a little of the bottom (f
    frame's bottom edge and mostly seen from behind; a band member faces the room. People whose box ends above the
    bottom edge AND whose face is visible (>= 2 of nose/eyes) set the limits (everyone big if nobody qualifies).
 1b. START BELOW THE CEILING (plan/fragment top=): the shot opens already cut at the venue's lights instead of
-   showing the ceiling first. top="auto" (the default to use) places the start from the skeletons: START_ROOM (6 %)
-   above the band's head line, which already carries HEADROOM -- about 13 % above the highest head, the row of
-   stage lights in a typical crowd-level phone shot. A number is a fixed fraction (never below the head limit).
+   showing the ceiling first. top="auto" (the default to use) starts LIGHTS_ROOM (2 %) above the row of stage
+   lights nearest above the band (lights_row(): blown-out fixtures on GPU frames), so only the lights remain of the
+   ceiling; with no lights found, START_ROOM (6 %) above the band's head line (skeletons). A number is a fixed
+   fraction (never below the head limit).
    Why not a fixed fraction: the user's "about 25 %" described one shot; the operator's distance changes it per shot.
 2. QUALITY LIMIT FROM MEASURED DETAIL, NOT A PERCENTAGE. "Stop at 85 %" was arbitrary; the rule is never to
    enlarge a pixel -- and a phone's nominal 4K is not real 4K (noise reduction, HEVC, low light, stabilization).
@@ -58,6 +59,7 @@ import window_stabilize as WS  # noqa: E402
 
 VERSION = "pz-3"   # pz-3: band-only limits, 7 % headroom, start crop (top=)
 HEADROOM, FOOTROOM, BOT_MAX = 0.07, 0.03, 0.92
+LIGHTS_ROOM = 0.02  # top="auto": the shot opens this much above the stage-lights row
 START_ROOM = 0.06   # top="auto": the shot opens this much (of the height) above the band's head line
 REAL_MIN = 0.65
 SSIM_OK = 0.9925   # calibrated: the reviewed dim-stage phone clip measures f_eff 0.50 with this GPU test
@@ -71,6 +73,31 @@ TONEMAP = "tonemapping=hable:colorspace=bt709:color_primaries=bt709:color_trc=bt
 def _stat(p):
     st = os.stat(p)
     return [os.path.normcase(os.path.abspath(p)), st.st_size, int(st.st_mtime)]
+
+
+_LIGHTS = {}
+
+
+def lights_row(clip, head_line):
+    """Top of the row of stage lights nearest above the band (fraction of the height), or None. Light fixtures blow
+    out to near-white: 1 frame/s on the GPU, rows above the band's head line holding blown-out spots, the lowest
+    group of such rows = the truss nearest the band (the ceiling and higher trusses above it are cut away). Cached."""
+    key = (clip, os.path.getmtime(clip), round(head_line, 3))
+    if key in _LIGHTS:
+        return _LIGHTS[key]
+    W, H = 270, 480
+    r = subprocess.run(["ffmpeg", "-v", "error", "-hwaccel", "cuda", "-i", clip, "-vf", f"fps=1,scale={W}:{H}",
+                        "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+    n = len(r.stdout) // (W * H * 3)
+    y = None
+    if n:
+        fr = torch.from_numpy(np.frombuffer(r.stdout[:n * W * H * 3], np.uint8).reshape(n, H, W, 3).copy()).cuda()
+        rows = (fr.max(-1).values.float() > 0.97 * 255).float().mean(0).mean(1).cpu().numpy()
+        cand = np.where(rows[:int(head_line * H)] > 0.004)[0]
+        if len(cand):
+            y = float(np.split(cand, np.where(np.diff(cand) > 6)[0] + 1)[-1][0]) / H
+    _LIGHTS[key] = y
+    return y
 
 
 def band_limits(npz):
@@ -159,6 +186,7 @@ def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0, ref=None, top=0.0
     f_eff = effective_detail(clip, *(ref or (a, b)))   # whole shot: every piece of it frames identically
     min_h = out_h * REAL_MIN / f_eff
     t, top, bot = band_limits(npz)
+    lights = lights_row(clip, float(np.median(top))) if start_crop == "auto" else None
     keys = []
     for u in np.arange(0, (b - a) + step, step):
         tc = u + a
@@ -170,8 +198,9 @@ def plan(clip, npz, a, b, m0, m1, out_h, step=0.5, amount=1.0, ref=None, top=0.0
         che = max(bt - tp, min_h)
         p = min(1.0, max(0.0, (u - m0) / (m1 - m0)))
         p = amount * p * p * p * (p * (p * 6 - 15) + 10)   # amount < 1: a partial zoom (same speed, shorter trip)
-        if start_crop == "auto":                           # from the skeletons: START_ROOM above the band's head
-            y0 = max(0.0, min(tp - START_ROOM * sh, sh - che))   # line (which already has HEADROOM) = the lights row
+        if start_crop == "auto":                           # just above the stage lights; else the skeleton rule:
+            y0 = (lights - LIGHTS_ROOM) * sh if lights is not None else tp - START_ROOM * sh   # START_ROOM over heads
+            y0 = max(0.0, min(y0, tp, sh - che))
         else:                                               # a fixed fraction, never below the head limit
             y0 = max(0.0, min(float(start_crop) * sh, tp, sh - che))
         s0 = sh - y0
@@ -218,7 +247,7 @@ def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.
     spec = {"src": _stat(clip), "pose": _stat(npz), "in": round(a, 3), "out": round(b, 3), "frames": n_frames,
             "zoom": [round(m0, 3), round(m1, 3)], "limits": [HEADROOM, FOOTROOM, BOT_MAX], "real_min": REAL_MIN,
             "ssim_ok": SSIM_OK, "f_eff": info["f_eff"], "stab": list(stab), "shake": [WS.VERSION, WS.SIGMA_S, WS.ROI],
-            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "ref": [round(x, 3) for x in ref] if ref else None, "title": title, "top": top if top == "auto" else round(top, 3), "enc": NVENC, "v": VERSION}
+            "size": [out_w, out_h], "fill_sigma": fill_sigma, "amount": round(amount, 3), "ref": [round(x, 3) for x in ref] if ref else None, "title": title, "top": top if top == "auto" else round(top, 3), "lights": "v1", "margin": "whole-shot", "enc": NVENC, "v": VERSION}
     key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:20]
     path = os.path.join(CACHE, key + ".mp4")
     if os.path.exists(path) and os.path.exists(path + ".json"):
@@ -229,10 +258,12 @@ def fragment(clip, npz, a, b, n_frames, m0, m1, out_w=2560, out_h=1440, stab=(0.
     if stab:
         ra, rb = ref or (a, b)                          # shake path of the whole shot, sliced to this piece
         c = WS.correction(WS.shake(clip, ra, rb), slow_s=stab[0], gain=stab[1])
+        # the width margin comes from the WHOLE shot: per piece, a short dissolve handle got a smaller margin than
+        # the body, so the pieces of one shot would each have had their own picture width
+        mx = max(1.0, float(np.ceil(np.percentile(np.abs(c["dx"]), 99.5))))   # narrow the width by the sway
         i0 = int(round((a - ra) * 30))
         idx = np.clip(np.arange(i0, i0 + n_frames), 0, len(c["t"]) - 1)
         c = {"t": np.arange(n_frames) / 30.0, "dx": c["dx"][idx], "dy": c["dy"][idx]}
-        mx = max(1.0, float(np.ceil(np.percentile(np.abs(c["dx"]), 99.5))))   # narrow the width by the sway
         CW, CX = f"{sw - 2 * mx:.0f}", f"({mx:.0f}+{WS.table_expr(c['t'], np.clip(c['dx'], -mx, mx))})"
         CY = f"max(0,min({sh}-{CH},{CY}+{WS.table_expr(c['t'], c['dy'])}))"
     PW = f"({CW}*{out_h}/{CH})"
