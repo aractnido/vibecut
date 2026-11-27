@@ -427,6 +427,29 @@ measurement have their own caches. The frame grid matches `render_cached.py`, so
 How it was reviewed: draw a 10 % grid on 3 frames of the shot (start, middle, end) and let the user say where the
 top line goes; render 10 s tests first; then the full shot, then one variable at a time.
 
+### Static landscape cameras: the band wide (`band_wide()` in `scripts/portrait_zoom_band.py`)
+
+A tripod camera's wide used to be a hand-set keep rectangle per camera for the whole show. It failed the first
+time the band moved: the singer left the keyboard to sing at centre stage, the rectangle still held the empty
+keyboard corner (a third of the frame), and the bassist at the other side was pushed to the edge. Pose tracking
+was there all along, but the fixed rectangle overrode it and even filtered the "musicians" to its own width.
+
+The band wide applies the band zoom's rules to a landscape camera, per shot:
+
+- **Band only**, as in the band zoom: a face visible, the box not cut by the bottom edge (the crowd in front is
+  seen from behind), plus two rules a static wide needs: the person stays on screen for at least 40 % of the shot
+  (a fan at the frame's edge comes and goes) and the box does not touch the frame's sides.
+- **The smallest 16:9 window** around the band's 5th-95th percentile envelope over the shot, with 4 % air at the
+  sides and **13 % headroom** above the heads, so a band sign or logo over the stage stays whole (the phones' 7 %
+  cut it in half).
+- **The lights row only when it is close** (within 8 % above that top). On a phone the lights sit just above the
+  band; on a stage-front tripod they hang near the top of the frame, and opening there undid the zoom (1.16x
+  instead of ~1.6x).
+- The keep rectangle stays as the outer limit and the fallback when fewer than two band members are found. The
+  push-in onto the most active musician is unchanged, now choosing among the band members anywhere on stage.
+
+`py scripts/portrait_zoom_band.py wide <clip> <pose.npz> <in_s> <out_s>` prints the window for one shot.
+
 ### Edit pacing: measure it, then add soft rules (`scripts/edit_stats.py`)
 
 Hard rules and metadata define what is possible at each moment: who has footage, phrases, how far a clip can zoom,
