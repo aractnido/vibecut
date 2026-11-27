@@ -13,9 +13,14 @@ This script is the decision layer every renderer should use:
                           phrase after the first bar line) -> the plain framing: full height on the fill, still with
                           the start crop below the ceiling.
   render(...)          -> portrait_zoom.fragment() (cached, stabilized, fill derived from the same window).
+  band_wide(...)       -> the same band rules for a STATIC LANDSCAPE camera's wide: the smallest 16:9 window that
+                          holds the band (band only, people who stay all shot, headroom above the heads, the lights
+                          row when it sits just above them, a little air at the sides). A fixed keep rectangle,
+                          the old way, cannot follow a singer who leaves the keyboard for centre stage.
 
 Usage:
   py portrait_zoom_band.py measure <clip> <pose.npz>
+  py portrait_zoom_band.py wide <clip> <pose.npz> <in_s> <out_s>      (landscape camera: prints the 16:9 window)
   py portrait_zoom_band.py render <clip> <pose.npz> <in_s> <out_s> <song_t_of_in> <phrase_boundaries> <out.mp4>
         [--top auto|FRACTION] [--size 2560x1440]
     phrase_boundaries: a song map JSON with "phrases" [{"t0", "t1"}...] (song_map.py) or a comma list of song
@@ -102,11 +107,67 @@ def render(clip, pose, a, b, song_t, bounds, out, top="auto", size=(2560, 1440),
     return zp, hit
 
 
+WIDE_HEADROOM = 0.13     # landscape wide: room above the band's heads -- a band sign / logo over the stage stays
+                         # whole (the phones' 0.07 cut it in half on a static camera)
+WIDE_LIGHTS_REACH = 0.08 # the lights row is kept only when it sits this close above that top; a landscape wide never
+                         # stretches up to far trusses (that undid the zoom)
+WIDE_STAY = 0.4          # a band member is on screen for >= this share of the shot; the crowd at the edges comes and goes
+WIDE_SIDE_AIR = 0.04     # air left and right of the band, as a share of its width
+
+
+def band_wide(clip, pose, a, b, size=None):
+    """The wide for a static landscape camera over clip time [a, b): (x, y, w) of a 16:9 window in source pixels,
+    or None when fewer than two band members are found (the caller keeps its fallback framing).
+    Band members only, as in band_limits(): a face visible (two of nose/eyes), the box not cut by the bottom edge,
+    not touching the frame's sides, and present for WIDE_STAY of the shot. Robust over the shot: 5th/95th
+    percentiles of the per-frame band envelope."""
+    d = np.load(pose)
+    fi, box, kp, tid = d["frame_idx"], d["box"], d["kp"], d["track_id"]
+    fps, fw, fh = float(d["fps"]), float(d["frame_w"]), float(d["frame_h"])
+    if size is None:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                            "-of", "csv=p=0", clip], capture_output=True, text=True)
+        size = tuple(int(v) for v in r.stdout.strip().split(",")[:2])
+    W, H = size
+    f0, f1 = int(a * fps), int(b * fps)
+    inn = (fi >= f0) & (fi < f1)
+    h = box[:, 3] - box[:, 1]
+    ok = ((h > 0.12 * fh) & (h < 0.6 * fh) & (box[:, 3] < 0.97 * fh) & ((kp[:, 0:3, 2] > 0.3).sum(1) >= 2)
+          & (box[:, 0] > 0.01 * fw) & (box[:, 2] < 0.99 * fw))
+    ids, cnt = np.unique(tid[inn & ok], return_counts=True)
+    stay = ids[cnt >= WIDE_STAY * (f1 - f0)]
+    env = []
+    for f in range(f0, f1):
+        m = (fi == f) & ok & np.isin(tid, stay)
+        if m.sum() >= 2:
+            env.append((box[m, 0].min(), box[m, 1].min(), box[m, 2].max(), box[m, 3].max()))
+    if len(env) < 10:
+        return None
+    env = np.array(env)
+    sx, sy = W / fw, H / fh
+    x0, x1 = np.percentile(env[:, 0], 5) * sx, np.percentile(env[:, 2], 95) * sx
+    head, y1 = np.percentile(env[:, 1], 5) / fh, np.percentile(env[:, 3], 95) * sy
+    top = head - WIDE_HEADROOM
+    lr = PZ.lights_row(clip, round(head, 2))
+    if lr is not None and top - WIDE_LIGHTS_REACH <= lr < top:
+        top = max(0.0, lr - PZ.LIGHTS_ROOM)
+    top *= H
+    air = WIDE_SIDE_AIR * (x1 - x0)
+    ch = min(H, W * 9 / 16, max(y1 - top, (x1 - x0 + 2 * air) * 9 / 16))
+    cw = ch * 16 / 9
+    x = min(max((x0 + x1) / 2 - cw / 2, 0), W - cw)
+    y = min(max(top, 0), H - ch)
+    return (float(x), float(y), float(cw))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("measure")
     m.add_argument("clip"); m.add_argument("pose")
+    wd = sub.add_parser("wide")
+    for k in ("clip", "pose", "a", "b"):
+        wd.add_argument(k)
     r = sub.add_parser("render")
     for k in ("clip", "pose", "a", "b", "song_t", "phrases", "out"):
         r.add_argument(k)
@@ -115,6 +176,11 @@ def main():
     args = ap.parse_args()
     if args.cmd == "measure":
         print(json.dumps(measure(args.clip, args.pose), indent=1))
+        return
+    if args.cmd == "wide":
+        r_ = band_wide(args.clip, args.pose, float(args.a), float(args.b))
+        print(json.dumps(None if r_ is None else {"x": round(r_[0], 1), "y": round(r_[1], 1), "w": round(r_[2], 1),
+                                                   "h": round(r_[2] * 9 / 16, 1)}))
         return
     w, h = (int(x) for x in args.size.lower().split("x"))
     zp, hit = render(args.clip, args.pose, float(args.a), float(args.b), float(args.song_t),
