@@ -31,6 +31,7 @@ This document is a chronicle of two real shows, written as the work happened. Us
 | The `show.json` pipeline: lens/roll correction, shake detection and stabilization, audio sync, soundtrack, people and movement, floor energy, the director's scene script, the cached renderer (`render_cached.py`) | **Yes, runnable** |
 | The band zoom for vertical phone shots (`portrait_zoom_band.py` on `portrait_zoom.py`), song map (`song_map.py`), window stabilization (`window_stabilize.py`) | **Yes** |
 | Text on a calibrated stage plane through zooms/pans (`stage_text.py`) | **Yes** |
+| Dynamics map, reference-video synthesis, director agent (`dynamics_map.py`, `ref_video_scan.py`, `ref_video_synth.py`, `agents/director.md`) | **Yes** |
 | Room-mic geometry per band (`mic_arrivals.py`) and the `audio-engineer` agent (`agents/`) | **Yes** |
 | The multi-mic mix: standardize every source once, layered recipes, blind-test waves (see "Audio from room mics") | **Method only**, except `mic_arrivals.py` |
 | Legacy master-camera path (`build_masters.py`, `build_timeline.py`, `make_song_windows.py`, `render_song.py`, `precise_audio_sync.py`, `sync_by_song_window.py`) | Yes, but tied to the first show's layout |
@@ -482,6 +483,36 @@ sprite once per song; in a renderer that already has the cropped frame, drawing 
 Check before any song render: `stage_text.py --keys "t,zoom,cx,cy;..."` renders a few seconds of zoom/pan over the real
 clip with the text (or a grid) on the plane, and writes the H track. A camera move multiplies one more matrix into
 `H(f)`, so "floating" text (parallax against a virtual move) costs the same.
+
+### Direction that follows the music: dynamics map, reference-video synthesis, director agent
+An explosive, dynamic song can't be cut by the clock. Three pieces, in this order:
+1. **Dynamics map** (`scripts/dynamics_map.py NN [--stage MIC] [--crowd MIC,MIC]`): per beat, the level of the mix and
+   of each stem, plus "crunch" (the other stem at 2-6 kHz). In a room recording the loudness barely moves (the PA and
+   the room compress it), but the distortion does, so crunch carries the explosions. Per bar it gives an intensity
+   from 0 to 1. It also finds guitar transients at 10 ms (the pre-chorus blasts), builds and drops, high-voice spans,
+   and a crowd-vs-stage mic index. Sections come from `metadata/sections/NN.json`, snapped to bars. Seen on a
+   room-recorded ballad: the mix moved only ~7 dB, while intensity ran from 0.11 just before the chorus to 0.82 on
+   the blast (+16 dB in one hit on the guitar stem). The crowd index could NOT tell the crowd singing apart from the
+   PA, because every mic hears the PA; ask the user for those moments.
+2. **Reference-video synthesis**, when the user wants a song to follow its official video ("don't reinvent the
+   wheel"):
+   - `scripts/ref_video_scan.py <video> <outdir>` decodes on NVDEC at ~385 fps and flags repeated frames. One
+     reference held only 16 new frames/s, which is part of its look.
+   - `scripts/ref_video_synth.py <outdir> NN` finds cuts by structural correlation of band-passed frames. A cut needs
+     the frames before and after it to disagree, so a one-frame light flash inside a shot is rejected; colour
+     histograms missed most cuts in a one-colour wash.
+   - It measures motion per shot with batched GPU Lucas-Kanade (similarity transform, 3-level pyramid, Huber
+     weighting, high-passed frames). The self-test recovers a known zoom exactly, and 3,700 pairs take 2 s.
+   - It runs YOLO pose per shot (shot size from head size) and measures light and silhouettes.
+   - A chroma DTW maps every shot onto OUR performance's time and sections.
+   - A person or agent then labels the subject of each shot from the contact sheets (singer, guitarist, crowd, the
+     stage seen from the crowd, guitar insert, flash...).
+   - Result for one 1992 video: 149 shots, median 1.23 s. Shots were one bar long in the quiet verses, 0.3-0.8 s in
+     the choruses with white flash frames on the guitar blasts, and long still takes after the collapse. The edit
+     followed the dynamics map almost exactly.
+3. **Director agent** (`agents/director.md`): turns the dynamics map, the reference grammar, the coverage and the
+   tracks into a draft shot-override file (`NN.director.json`). Every shot comes with its music reason, plus "needs"
+   for anything the renderer can't do yet. A review timeline comes before any render.
 
 ### Edit pacing: measure it, then add soft rules (`scripts/edit_stats.py`)
 
