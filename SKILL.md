@@ -30,6 +30,7 @@ This document is a chronicle of two real shows, written as the work happened. Us
 |---|---|
 | The `show.json` pipeline: lens/roll correction, shake detection and stabilization, audio sync, soundtrack, people and movement, floor energy, the director's scene script, the cached renderer (`render_cached.py`) | **Yes, runnable** |
 | The band zoom for vertical phone shots (`portrait_zoom_band.py` on `portrait_zoom.py`), song map (`song_map.py`), window stabilization (`window_stabilize.py`) | **Yes** |
+| Text on a calibrated stage plane through zooms/pans (`stage_text.py`) | **Yes** |
 | Room-mic geometry per band (`mic_arrivals.py`) and the `audio-engineer` agent (`agents/`) | **Yes** |
 | The multi-mic mix: standardize every source once, layered recipes, blind-test waves (see "Audio from room mics") | **Method only**, except `mic_arrivals.py` |
 | Legacy master-camera path (`build_masters.py`, `build_timeline.py`, `make_song_windows.py`, `render_song.py`, `precise_audio_sync.py`, `sync_by_song_window.py`) | Yes, but tied to the first show's layout |
@@ -449,6 +450,38 @@ The band wide applies the band zoom's rules to a landscape camera, per shot:
   push-in onto the most active musician is unchanged, now choosing among the band members anywhere on stage.
 
 `py scripts/portrait_zoom_band.py wide <clip> <pose.npz> <in_s> <out_s>` prints the window for one shot.
+
+### Text on the stage plane, locked through digital zooms (`scripts/stage_text.py`)
+A static camera's zoom/pan is a moving crop of its full frame. Text placed in one shot's pixels breaks when the crop
+changes: it falls out of a tighter shot, or sits at an angle that no longer matches. Seen first on a final chorus word:
+it looked right on the full frame and wrong in the zoomed shot actually used, because the shot's top edge sat below the
+text. Fix it once, generally:
+
+1. **Calibrate each static camera once, on the full frame.** The user aligns a grid to the stage front in the
+   stage-plane tool (yaw, pitch, roll, focal). Render the grid on a full frame and offer a sheet of pitch values: the
+   user judges "the top leans towards the stage" far better than a slider. Save `cameras/<cam>.json`:
+   `{"image": [W, H], "focal_px": f, "stage_front": {"yaw", "pitch", "roll"}}`.
+2. **Place text on that camera, not on a shot.** Centre pixel (x, y) on the full frame and a width; x/y move freely, the
+   camera's angles never change per text.
+3. **Precompute one 3x3 per frame.** `H(f) = S(f) . Hs`: `Hs` maps sprite pixels onto the plane (fixed); `S(f)` is the
+   frame's crop (x, y, width -> scale). `h_track()` returns `[N, 3, 3]`; save it next to the render. Any program then
+   draws with one warp per frame.
+4. **Draw at output size on the GPU.** `PlaneCompositor` warps the sprite (drawn once by PIL) through `H(f)` with torch
+   `grid_sample`, only inside the sprite's projected box. Sharper than burning text into the 4K source and zooming it.
+5. Text is opaque by default; keep it off people by placement (and the people masks), not by transparency.
+
+Measured (4K AV1 static camera, 1080p out, RTX 4090): the H track for a whole song is under 1 ms; the warp +
+composite is ~1 ms/frame. The first version ran at 13 fps because 4K RGB went through pipes (ffmpeg's CPU YUV->RGB on
+decode: 45 ms/frame). Now 65 fps sustained: NVDEC + `scale_cuda` hand over 8-bit NV12, YUV<->RGB (BT.709) runs on the
+GPU, NV12 goes back to NVENC, pinned buffers + reader/writer threads overlap the pipes. Two traps found measuring it:
+the YCbCr weights were swapped (red/blue stage light flipped), and colour tags given as ffmpeg OUTPUT options make it
+insert a CPU range conversion (Y off by 7); give them on the input side. Always compare a frame against the source
+decoded with the right matrix, away from the text. Storage for compute: precompute the H track and the premultiplied
+sprite once per song; in a renderer that already has the cropped frame, drawing is only the ~1 ms warp.
+
+Check before any song render: `stage_text.py --keys "t,zoom,cx,cy;..."` renders a few seconds of zoom/pan over the real
+clip with the text (or a grid) on the plane, and writes the H track. A camera move multiplies one more matrix into
+`H(f)`, so "floating" text (parallax against a virtual move) costs the same.
 
 ### Edit pacing: measure it, then add soft rules (`scripts/edit_stats.py`)
 
