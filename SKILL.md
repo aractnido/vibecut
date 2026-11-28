@@ -514,6 +514,39 @@ An explosive, dynamic song can't be cut by the clock. Three pieces, in this orde
    tracks into a draft shot-override file (`NN.director.json`). Every shot comes with its music reason, plus "needs"
    for anything the renderer can't do yet. A review timeline comes before any render.
 
+### A whole song in a reference video's look (shot plan + look renderer, QA'd in rounds)
+When the user wants one song to follow its official video ("analog only, the vintage look of the video"), the usual
+renderer is the wrong tool: hundreds of sub-second shots, a 4:3 frame, a grade per camera role, flashes, silhouettes.
+What worked on the first song done this way (132 shots, 4 minutes, about 6.5 minutes per render at 19 fps on one GPU):
+- **One dedicated GPU pass.** Read the director's plan (per shot: camera, a 4:3 crop in source pixels at start and
+  end, flash frames, specials). Decode each shot with NVDEC at exactly the output rate (the `fps` filter works on GPU
+  frames). Crop with a constant log zoom that is cut mid-move. Shots of the lead performer follow the smoothed head
+  track, and tripod cameras get a little handheld drift. Then grade, effects and grain on CUDA, and NVENC out.
+- **Look recipe from the colorist's measurements, in this order:** per-camera black floor and gains; diffusion;
+  crush; ONE continuous hue curve (per-band remaps tear colours into patches); luminance-preserving split tone;
+  chroma blur and highlight desaturation (analog chroma is soft, which also removes hard-edged hue islands);
+  halation; grain last, the same on every camera, held on held frames.
+- **Stage light can be the opponent.** A rig that is 78 % blue cannot be pulled warm by a split-tone; it has to be
+  remapped. The room's light did not follow the song, so the verse/chorus arc comes entirely from the grade.
+- **Flashes are overexposed film, not white frames:** gain, colour washing out, and bloom into the dark around the
+  light (two wide blurs). A constant veil reads as a digital overlay.
+- **Old-video cadence:** about 16 new frames per second, restarted at every cut so a cut always lands on a new frame;
+  the rest are held frames. Ask first, because a captured reference may show judder the original never had.
+- **Audience silhouettes:** use person masks, as a "vignette that is silhouette-aware". The whole audience sinks to
+  black and that black bleeds into a lens vignette. The rules that survived three QA rounds:
+  - audience = instances reaching the bottom of the frame, plus limbs touching them;
+  - performers are subtracted LAST, after the join and the temporal hold; any instance containing the tracked
+    performer's head is a performer; give each camera its own measured performer rule;
+  - hold masks over +-1 frame (+-3 smears a waving arm into a wedge); smooth the low-res mask edge;
+  - when the audience covers the subject on the static camera, move the shot to a camera with a clear view instead
+    of fighting it with masks (21 of 132 shots moved).
+- **Lyrics in such a song:** film subtitles under the grain, with a soft dark edge that disappears in flashes. Check
+  word times against the vocal stem: forced alignment stretches a word across a silence, and the title word sat 4.6 s
+  late twice.
+- **QA in rounds by an agent on real frames,** with the analog rule as an explicit check, every shot sampled and
+  the hit frames stepped. Three rounds were needed, and round 2 caught a regression that the fix for round 1 had
+  introduced (the lead performer blacked out). Re-run QA after every fix round.
+
 ### Edit pacing: measure it, then add soft rules (`scripts/edit_stats.py`)
 
 Hard rules and metadata define what is possible at each moment: who has footage, phrases, how far a clip can zoom,
