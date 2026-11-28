@@ -470,6 +470,15 @@ text. Fix it once, generally:
    `grid_sample`, only inside the sprite's projected box. Sharper than burning text into the 4K source and zooming it.
 5. Text is opaque by default; keep it off people by placement (and the people masks), not by transparency.
 
+Measured (4K AV1 static camera, 1080p out, RTX 4090): the H track for a whole song is under 1 ms; the warp +
+composite is ~1 ms/frame. The first version ran at 13 fps because 4K RGB went through pipes (ffmpeg's CPU YUV->RGB on
+decode: 45 ms/frame). Now 65 fps sustained: NVDEC + `scale_cuda` hand over 8-bit NV12, YUV<->RGB (BT.709) runs on the
+GPU, NV12 goes back to NVENC, pinned buffers + reader/writer threads overlap the pipes. Two traps found measuring it:
+the YCbCr weights were swapped (red/blue stage light flipped), and colour tags given as ffmpeg OUTPUT options make it
+insert a CPU range conversion (Y off by 7); give them on the input side. Always compare a frame against the source
+decoded with the right matrix, away from the text. Storage for compute: precompute the H track and the premultiplied
+sprite once per song; in a renderer that already has the cropped frame, drawing is only the ~1 ms warp.
+
 Check before any song render: `stage_text.py --keys "t,zoom,cx,cy;..."` renders a few seconds of zoom/pan over the real
 clip with the text (or a grid) on the plane, and writes the H track. A camera move multiplies one more matrix into
 `H(f)`, so "floating" text (parallax against a virtual move) costs the same.

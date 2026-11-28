@@ -171,6 +171,145 @@ class PlaneCompositor:
         return frame
 
 
+# ---------------------------------------------------------------- GPU-resident video I/O (NV12 in, NV12 out)
+# Measured on a 4K static camera (RTX 4090, 1080p out): 13 fps -> 65 fps. The warp is ~1 ms/frame; moving 4K RGB through pipes was the
+# whole cost (rgb24 decode read 45 ms: ffmpeg converts YUV->RGB on the CPU; upload 14; download 8). So: NVDEC + scale_cuda
+# hand over 8-bit NV12 (half the bytes, no CPU colour conversion), YUV<->RGB runs on the GPU, the output goes back as
+# NV12, pinned host buffers + readinto avoid copies, and reader/writer threads overlap the pipes with the GPU work.
+_M709 = {"r": (0.0, 1.5748), "g": (-0.1873, -0.4681), "b": (1.8556, 0.0)}     # BT.709 YCbCr -> RGB (Cb, Cr) weights
+
+
+def nv12_to_rgb(buf, W, H, full_range):
+    """uint8 NV12 [H*3/2, W] on the GPU -> float RGB [3, H, W] 0..1 (BT.709)."""
+    import torch
+    y = buf[:H].float()
+    uv = buf[H:].view(H // 2, W // 2, 2).permute(2, 0, 1).float()
+    uv = torch.nn.functional.interpolate(uv[None], size=(H, W), mode="bilinear", align_corners=False)[0]
+    if full_range:
+        y, cb, cr = y / 255, (uv[0] - 128) / 255, (uv[1] - 128) / 255
+    else:
+        y, cb, cr = (y - 16) / 219, (uv[0] - 128) / 224, (uv[1] - 128) / 224
+    return torch.stack([y + _M709[c][0] * cb + _M709[c][1] * cr for c in "rgb"]).clamp_(0, 1)
+
+
+def rgb_to_nv12(rgb):
+    """float RGB [3, H, W] 0..1 -> uint8 NV12 [H*3/2, W], BT.709 limited range (tag the encode bt709/tv)."""
+    import torch
+    r, g, b = rgb[0], rgb[1], rgb[2]
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    cb = (b - y) / 1.8556
+    cr = (r - y) / 1.5748
+    H, W = y.shape
+    uv = torch.nn.functional.avg_pool2d(torch.stack([cb, cr])[None], 2)[0]        # 4:2:0
+    out = torch.empty((H * 3 // 2, W), dtype=torch.uint8, device=rgb.device)
+    out[:H] = (16 + 219 * y).round_().clamp_(0, 255).to(torch.uint8)
+    out[H:] = (128 + 224 * uv).round_().clamp_(0, 255).to(torch.uint8).permute(1, 2, 0).reshape(H // 2, W)
+    return out
+
+
+class NV12Reader:
+    """NVDEC decode -> 8-bit NV12 frames in pinned host memory, read ahead on a thread. Iterate for GPU uint8 tensors."""
+
+    def __init__(self, path, start, n, W, H, depth=4):
+        import queue, threading, torch
+        self.W, self.H, self.n = W, H, n
+        self.size = W * H * 3 // 2
+        self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
+                                   "-ss", str(start), "-i", path, "-frames:v", str(n),
+                                   "-vf", "scale_cuda=format=nv12,hwdownload,format=nv12", "-f", "rawvideo", "-"],
+                                  stdout=subprocess.PIPE, bufsize=0)
+        self.free, self.full = queue.Queue(), queue.Queue(depth)
+        for _ in range(depth + 1):
+            self.free.put(torch.empty(self.size, dtype=torch.uint8).pin_memory())
+        self.th = threading.Thread(target=self._run, daemon=True)
+        self.th.start()
+
+    def _run(self):
+        for _ in range(self.n):
+            b = self.free.get()
+            mv, got = memoryview(b.numpy()), 0
+            while got < self.size:
+                k = self.p.stdout.readinto(mv[got:])
+                if not k:
+                    break
+                got += k
+            if got < self.size:
+                break
+            self.full.put(b)
+        self.full.put(None)
+
+    def __iter__(self):
+        while True:
+            b = self.full.get()
+            if b is None:
+                return
+            g = b.to("cuda", non_blocking=True).view(self.H * 3 // 2, self.W)
+            import torch
+            torch.cuda.current_stream().synchronize()                # host buffer reusable once copied
+            self.free.put(b)
+            yield g
+
+
+class NV12Writer:
+    """GPU NV12 frames -> NVENC, written from a thread via pinned host buffers."""
+
+    def __init__(self, out, W, H, fps, codec="h264_nvenc", cq=19, depth=4):
+        import queue, threading, torch
+        self.size = W * H * 3 // 2
+        # colour tags on the INPUT side: as output options ffmpeg inserts a CPU range conversion (measured: Y -7)
+        tags = ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv"]
+        self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "nv12",
+                                   "-s", f"{W}x{H}", "-r", str(fps), *tags, "-i", "-", "-c:v", codec,
+                                   "-cq", str(cq), out], stdin=subprocess.PIPE, bufsize=0)
+        self.free, self.full = queue.Queue(), queue.Queue(depth)
+        for _ in range(depth + 1):
+            self.free.put(torch.empty(self.size, dtype=torch.uint8).pin_memory())
+        self.th = threading.Thread(target=self._run, daemon=True)
+        self.th.start()
+
+    def _run(self):
+        while True:
+            item = self.full.get()
+            if item is None:
+                break
+            b, ev = item
+            ev.synchronize()
+            self.p.stdin.write(memoryview(b.numpy()))
+            self.free.put(b)
+
+    def write(self, nv12):
+        import torch
+        b = self.free.get()
+        b.copy_(nv12.reshape(-1), non_blocking=True)
+        ev = torch.cuda.Event()
+        ev.record()
+        self.full.put((b, ev))
+
+    def close(self):
+        self.full.put(None)
+        self.th.join()
+        self.p.stdin.close()
+        self.p.wait()
+
+
+def crop_scale(rgb, crop, out_w, out_h):
+    """float RGB [3, H, W] -> [3, out_h, out_w]: the crop (x, y, width) resampled on the GPU (bilinear)."""
+    import torch
+    _, H, W = rgb.shape
+    cx, cy, cw = crop
+    ch = cw * H / W
+    gy = torch.linspace(cy, cy + ch, out_h, device=rgb.device) / (H - 1) * 2 - 1
+    gx = torch.linspace(cx, cx + cw, out_w, device=rgb.device) / (W - 1) * 2 - 1
+    g = torch.stack(torch.meshgrid(gy, gx, indexing="ij")[::-1], -1)[None]
+    return torch.nn.functional.grid_sample(rgb[None], g, mode="bilinear", align_corners=True)[0]
+
+
+def full_range_of(path):
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_range",
+                        "-of", "csv=p=0", path], capture_output=True, text=True).stdout.strip()
+    return r in ("pc", "full")
+
+
 # ---------------------------------------------------------------- check-clip CLI
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -200,28 +339,17 @@ def main():
     Ht = h_track(Hs, crops, OW)
     np.savez(a.out.rsplit(".", 1)[0] + "_H.npz", H=np.float32(Ht), sprite_wh=[sw, sh], crops=np.float32(crops))
     comp = PlaneCompositor(spr, OW, OH)
-    dec = subprocess.Popen(["ffmpeg", "-v", "error", "-hwaccel", "cuda", "-ss", str(a.start), "-i", a.video,
-                            "-frames:v", str(n), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
-    enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OW}x{OH}",
-                            "-r", str(a.fps), "-i", "-", "-c:v", "h264_nvenc", "-cq", "19", "-pix_fmt", "yuv420p",
-                            a.out], stdin=subprocess.PIPE)
-    F = torch.nn.functional
+    full = full_range_of(a.video)
     t0 = time.time()
-    for f in range(n):
-        buf = dec.stdout.read(W * H * 3)
-        if len(buf) < W * H * 3:
-            break
-        cx, cy, cw = crops[f]
-        ch = cw * H / W
-        img = torch.frombuffer(bytearray(buf), dtype=torch.uint8).cuda().view(H, W, 3).permute(2, 0, 1)[None].float()
-        gy = (torch.linspace(cy, cy + ch, OH, device="cuda") / (H - 1)) * 2 - 1
-        gx = (torch.linspace(cx, cx + cw, OW, device="cuda") / (W - 1)) * 2 - 1
-        g = torch.stack(torch.meshgrid(gy, gx, indexing="ij")[::-1], -1)[None]
-        o = F.grid_sample(img, g, mode="bilinear", align_corners=True)[0] / 255
-        comp.composite(o, Ht[f])
-        enc.stdin.write((o.permute(1, 2, 0).clamp(0, 1) * 255).byte().cpu().numpy().tobytes())
-    enc.stdin.close()
-    enc.wait()
+    rd = NV12Reader(a.video, a.start, n, W, H)
+    wr = NV12Writer(a.out, OW, OH, a.fps)
+    f = 0
+    with torch.inference_mode():
+        for f, nv in enumerate(rd):
+            o = crop_scale(nv12_to_rgb(nv, W, H, full), crops[f], OW, OH)
+            comp.composite(o, Ht[f])
+            wr.write(rgb_to_nv12(o))
+    wr.close()
     dt = time.time() - t0
     print(f"{f + 1} frames in {dt:.1f} s ({(f + 1) / dt:.1f} fps) -> {a.out}")
 
