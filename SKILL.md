@@ -732,7 +732,7 @@ The text version, `scripts/edit_stats.py`, is still there for the console.
 
 Three subagents, each with one job; the definitions are in this repo's `agents/` folder. **Install:** a skill's
 `agents/` folder is not registered automatically. Copy `song-researcher.md`, `lyricist.md`, `kinetic-typography.md`
-and `lyric-qa.md` (and `audio-engineer.md`, for the soundtrack) to `.claude/agents/` (project) or `~/.claude/agents/`
+`lyric-qa.md` and `colorist.md` (and `audio-engineer.md`, for the soundtrack) to `.claude/agents/` (project) or `~/.claude/agents/`
 and start a new session. If an agent type is
 unavailable, spawn a general-purpose agent and tell it to read the file and act as that role. `producer-brief.md`
 is not an agent definition: it is the prompt for one general-purpose agent that prepares one song. The agents
@@ -748,6 +748,10 @@ The roles:
   negation.
 - **`kinetic-typography`**: turns the reading and the annotation into an exact render spec (Wp-relative sizes,
   hex colours, beat-quantised effects).
+- **`colorist`**: owns how the picture looks, not the words: colour washes and tritones for split-screen panels,
+  grading between cameras, colour transitions. Its first rule came from a review: a flat duotone killed a sparkle drum
+  kit's shine, so washes are tritones that keep highlights white. It hands back numbered review sheets (always with
+  "Original") and an exact colour spec.
 
 The chain is:
 1. The researcher writes the reading; the agent (you) finalises it.
